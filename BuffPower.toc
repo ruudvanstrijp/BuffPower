@@ -1,0 +1,12 @@
+## Interface: 20504 ## Version: 1.0.0
+## Title: BuffPower
+## Notes: Assists Mages, Priests, and Druids in coordinating group buffs. Based on PallyPower, refocused for group-based buffing.
+## Author: Ruuddie
+## Credits: AznamirWoW for PallyPower
+## SavedVariables: BuffPowerDB
+## OptionalDeps: Ace3
+
+BuffPowerValues.lua
+locale/enUS.lua
+BuffPower.lua
+BuffPowerOptions.lua
