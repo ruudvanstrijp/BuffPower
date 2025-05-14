@@ -460,6 +460,30 @@ function BuffPower:CreateUI()
         BuffPowerOrbFrame.title = BuffPowerOrbFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
         BuffPowerOrbFrame.title:SetPoint("TOP", BuffPowerOrbFrame, "TOP", 0, -8) -- Adjusted for insets
         BuffPowerOrbFrame.title:SetText("BuffPower")
+        -- Make the title text support mouse
+        BuffPowerOrbFrame.titleBg = BuffPowerOrbFrame:CreateTexture(nil, "BACKGROUND")
+        BuffPowerOrbFrame.titleBg:SetPoint("TOPLEFT", BuffPowerOrbFrame.title, "TOPLEFT", -4, 2)
+        BuffPowerOrbFrame.titleBg:SetPoint("BOTTOMRIGHT", BuffPowerOrbFrame.title, "BOTTOMRIGHT", 4, -2)
+        BuffPowerOrbFrame.titleBg:SetColorTexture(0,0,0,0)
+        BuffPowerOrbFrame.titleFrame = CreateFrame("Frame", nil, BuffPowerOrbFrame)
+        BuffPowerOrbFrame.titleFrame:SetAllPoints(BuffPowerOrbFrame.title)
+        BuffPowerOrbFrame.titleFrame:SetFrameStrata("HIGH")
+        BuffPowerOrbFrame.titleFrame:EnableMouse(true)
+        BuffPowerOrbFrame.titleFrame:SetScript("OnMouseUp", function(self, btn)
+            -- Open options menu
+            if BuffPower and type(BuffPower.OpenAssignmentMenu) == "function" then
+                BuffPower:OpenAssignmentMenu(1, BuffPowerOrbFrame.titleFrame)
+                -- Could make this a general options panel in future
+            elseif InterfaceOptionsFrame_OpenToCategory then
+                InterfaceOptionsFrame_OpenToCategory(BuffPower.optionsPanelName or "BuffPower")
+            end
+        end)
+        BuffPowerOrbFrame.titleFrame:SetScript("OnEnter", function(self)
+            BuffPowerOrbFrame.titleBg:SetColorTexture(1,1,0,0.3)
+        end)
+        BuffPowerOrbFrame.titleFrame:SetScript("OnLeave", function(self)
+            BuffPowerOrbFrame.titleBg:SetColorTexture(0,0,0,0)
+        end)
 
         -- Create the main container frame for buttons inside the main frame
         BuffPowerOrbFrame.container = CreateFrame("Frame", "BuffPowerContainerFrame", BuffPowerOrbFrame)
@@ -523,7 +547,7 @@ function BuffPower:CreateUI()
     -- Create Group Buttons if they don't exist
     for i = 1, MAX_RAID_GROUPS do
         if not BuffPowerGroupButtons[i] then
-            local groupButton = CreateFrame("Button", "BuffPowerGroupButton" .. i, BuffPowerOrbFrame.container)
+            local groupButton = CreateFrame("Button", "BuffPowerGroupButton" .. i, BuffPowerOrbFrame.container, "SecureActionButtonTemplate")
             groupButton:SetSize(80, 28) -- Smaller buttons like in PallyPower
             groupButton.groupID = i
             
@@ -569,27 +593,25 @@ function BuffPower:CreateUI()
             groupButton.text:SetPoint("RIGHT", groupButton.time, "LEFT", -2, 0)
             groupButton.text:SetJustifyH("LEFT")
             
-            groupButton:SetScript("OnClick", function(self_button, mouseButton)
-                if mouseButton == "RightButton" then -- Cast buff on RightButton
-                    local assignment = (BuffPowerDB and BuffPowerDB.assignments) and BuffPowerDB.assignments[self_button.groupID]
-                    local _, playerClass = UnitClass("player")
-                    local myName = UnitName("player")
-                    if (assignment and assignment.playerName == myName) or
-                       ((not assignment or not assignment.playerName) and BuffPower.ClassBuffInfo and BuffPower.ClassBuffInfo[playerClass]) then
-                        if BuffPower.ClassBuffInfo and BuffPower.ClassBuffInfo[playerClass] then
-                            BuffPower:CastBuff(self_button.groupID)
-                        else
-                            DEFAULT_CHAT_FRAME:AddMessage(L["You are not a class that can provide this type of buff."] or "Cannot provide buff.")
-                        end
-                    elseif assignment and assignment.playerName ~= myName then
-                         DEFAULT_CHAT_FRAME:AddMessage((L["Group is assigned to: "] or "Group assigned to: ") .. assignment.playerName)
-                    else
-                        DEFAULT_CHAT_FRAME:AddMessage(L["This group is not assigned or you cannot buff."] or "Group not assigned/cannot buff.")
-                    end
-                elseif mouseButton == "LeftButton" then -- Open assignment menu on LeftButton
-                    BuffPower:OpenAssignmentMenu(self_button.groupID, self_button)
+            -- SecureActionButton: Assign group buff spell to button click for this group
+            local _, playerClass = UnitClass("player")
+            local buffInfo = BuffPower.ClassBuffInfo and BuffPower.ClassBuffInfo[playerClass]
+            if buffInfo then
+                groupButton:SetAttribute("type", "spell")
+                groupButton:SetAttribute("spell", buffInfo.group_spell_name)
+                groupButton:SetAttribute("unit", "player")
+                groupButton.tooltip = "Click to group buff with " .. buffInfo.group_spell_name
+            else
+                groupButton.tooltip = "Your class cannot group buff."
+            end
+            groupButton:SetScript("OnEnter", function(selfB)
+                if selfB.tooltip then
+                    GameTooltip:SetOwner(selfB, "ANCHOR_RIGHT")
+                    GameTooltip:SetText(selfB.tooltip)
+                    GameTooltip:Show()
                 end
             end)
+            groupButton:SetScript("OnLeave", function(selfB) GameTooltip:Hide() end)
             
             groupButton:SetScript("OnEnter", function(self_button)
                 -- Hide tooltip and show the interactive member frame instead
@@ -832,19 +854,7 @@ function BuffPower:OpenAssignmentMenu(groupId, anchorFrame)
         end
     end
     -- Add group members for single-target buffing
-    local groupMembers = BuffPower:GetGroupMembers(groupId)
-    if #groupMembers > 0 then
-        table.insert(menuList, { text = "-----", notCheckable=true, disabled=true })
-        table.insert(menuList, { text = L["Buff Single Member"] or "Buff Single Member", isTitle = true, notCheckable = true, disabled = true })
-        for _, member in ipairs(groupMembers) do
-            local classColorHex = (BuffPower.ClassColors and BuffPower.ClassColors[member.class] and BuffPower.ClassColors[member.class].hex) or "|cffffffff"
-            table.insert(menuList, {
-                text = string.format("%s%s|r", classColorHex, member.name),
-                func = function() BuffPower:CastBuff(groupId, member.name) end,
-                notCheckable = true
-            })
-        end
-    end
+    -- (Removed 'Buff Single Member' entry and all single buff items. Member buffing is now only via group UI.)
     if L_UIDropDown and L_UIDropDown.EasyMenu then
         L_UIDropDown:EasyMenu(menuList, assignmentMenu, anchorFrame, 0, 0, "MENU")
     else
