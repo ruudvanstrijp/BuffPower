@@ -93,7 +93,9 @@ local function BuffPower_ShowGroupMemberFrame(anchorButton, groupId)
             while true do
                 local bname = UnitAura(member.unitid, i, "HELPFUL")
                 if not bname then break end
+                print("BuffPower DEBUG: Found buff on", member.name, ":", bname, "Looking for:", buffInfo.single_spell_name, "or", buffInfo.group_spell_name)
                 if bname == buffInfo.single_spell_name or bname == buffInfo.group_spell_name then
+                    print("BuffPower DEBUG: Buff match for", member.name, ":", bname)
                     needsBuff = false
                     break
                 end
@@ -216,6 +218,15 @@ local function BuffPower_ShowGroupMemberFrame(anchorButton, groupId)
                     BuffPower:UpdateRoster()
                 end
             end)
+    
+            -- After buffing, if the member popout is open, just refresh its backgrounds (no flicker)
+            if BuffPowerGroupMemberFrame and BuffPowerGroupMemberFrame:IsShown() and BuffPowerGroupMemberFrame.UpdateBackdrop then
+                C_Timer.After(0.7, function()
+                    if BuffPowerGroupMemberFrame and BuffPowerGroupMemberFrame:IsShown() then
+                        BuffPowerGroupMemberFrame:UpdateBackdrop()
+                    end
+                end)
+            end
         end)
 
         BuffPowerGroupMemberFrame.buttons[#BuffPowerGroupMemberFrame.buttons+1] = btn
