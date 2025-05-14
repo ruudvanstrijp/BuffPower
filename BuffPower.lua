@@ -2,7 +2,6 @@
 -- Core logic for BuffPower addon
 
 local addonName = "BuffPower"
-local L = LibStub("AceLocale-3.0"):GetLocale(addonName) -- For localization
 
 -- Attempt to get AceAddon-3.0
 local AceAddon = LibStub("AceAddon-3.0")
@@ -12,9 +11,10 @@ if not AceAddon then
 end
 
 -- Create the addon object using AceAddon-3.0
--- We'll include AceConsole-3.0 for slash commands and AceEvent-3.0 for events.
--- AceDB-3.0 will be handled by OnInitialize for the database part.
 local BuffPower = AceAddon:NewAddon(addonName, "AceConsole-3.0", "AceEvent-3.0")
+
+-- Get Locale table *after* NewAddon, similar to PallyPower
+local L = LibStub("AceLocale-3.0"):GetLocale(addonName) 
 
 -- Constants
 local MAX_RAID_MEMBERS = 40
@@ -686,10 +686,12 @@ end
 -- Addon Lifecycle
 --------------------------------------------------------------------------------
 function BuffPower:OnInitialize()
+    -- Use self.name when inside an AceAddon method to get the locale table
+    local L = LibStub("AceLocale-3.0"):GetLocale(self.name)
+    
     -- AceDB initialization
     self.db = LibStub("AceDB-3.0"):New("BuffPowerDB", BuffPower.defaults, true)
     BuffPowerDB = self.db.profile -- Make DB readily accessible
-    L = LibStub("AceLocale-3.0"):GetLocale(addonName) -- Ensure L is set up after AceLocale is available
 
     if not BuffPowerDB.orbPosition then BuffPowerDB.orbPosition = { a1 = "CENTER", a2 = "CENTER", x = 0, y = 0 } end
     
@@ -719,13 +721,13 @@ function BuffPower:OnInitialize()
     if not BuffPowerDB.classSettings then BuffPowerDB.classSettings = { MAGE = {enabled=true}, PRIEST = {enabled=true}, DRUID = {enabled=true}} end
 
     BuffPower.optionsPanelName = "BuffPower" -- Ensure this is set
-    L = BuffPower.L or setmetatable({}, { __index = function(t, k) return k end })
+    
     self:RegisterChatCommand("buffpower", "ChatCommand")
     self:RegisterChatCommand("bp", "ChatCommand")
 
     -- CRITICAL: Ensure no call to self:CreateOptionsPanel() or similar is present here.
     -- The options panel creation is handled by the ADDON_LOADED event.
-    --[[
+    --[[ 
         -- This block should remain commented or removed:
         if not BuffPower.optionsPanelCreated and self.CreateOptionsPanel then
             self:CreateOptionsPanel(); BuffPower.optionsPanelCreated = true
