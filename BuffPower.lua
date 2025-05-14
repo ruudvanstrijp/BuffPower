@@ -72,7 +72,7 @@ local function BuffPower_ShowGroupMemberFrame(anchorButton, groupId)
     BuffPowerGroupMemberFrame.buttons = {}
 
     local members = BuffPower:GetGroupMembers(groupId)
-    local buttonHeight, buttonWidth, verticalSpacing = 22, 120, 1
+    local buttonHeight, buttonWidth, verticalSpacing = 22, 120, 1 -- Member cell size (keep in sync with group cell)
     local yOffset = -8
     local _, playerClass = UnitClass("player")
     local buffInfo = BuffPower.ClassBuffInfo and BuffPower.ClassBuffInfo[playerClass]
@@ -210,6 +210,12 @@ local function BuffPower_ShowGroupMemberFrame(anchorButton, groupId)
 
         btn:SetScript("PostClick", function(selfB)
             if selfB.anim then selfB.anim:Play() end
+            -- Always refresh the full roster after a single buff, like PallyPower
+            C_Timer.After(0.6, function()
+                if BuffPower and BuffPower.UpdateRoster then
+                    BuffPower:UpdateRoster()
+                end
+            end)
         end)
 
         BuffPowerGroupMemberFrame.buttons[#BuffPowerGroupMemberFrame.buttons+1] = btn
@@ -670,7 +676,7 @@ function BuffPower:CreateUI()
     for i = 1, MAX_RAID_GROUPS do
         if not BuffPowerGroupButtons[i] then
             local groupButton = CreateFrame("Button", "BuffPowerGroupButton" .. i, BuffPowerOrbFrame.container, "SecureActionButtonTemplate")
-            groupButton:SetSize(80, 28) -- Smaller buttons like in PallyPower
+            groupButton:SetSize(120, 22) -- Match member cell size for visual consistency
             groupButton.groupID = i
             
             -- Create a colored background texture
@@ -740,6 +746,15 @@ function BuffPower:CreateUI()
                         if not self_button:IsMouseOver() and not BuffPowerGroupMemberFrame:IsMouseOver() then
                             BuffPowerGroupMemberFrame:Hide()
                         end
+                    end
+                end)
+            end)
+            -- Refresh member backgrounds after group buff (right or left click)
+            groupButton:SetScript("PostClick", function(selfB)
+                -- Always refresh the full roster after a group buff, like PallyPower
+                C_Timer.After(0.6, function()
+                    if BuffPower and BuffPower.UpdateRoster then
+                        BuffPower:UpdateRoster()
                     end
                 end)
             end)
@@ -869,8 +884,12 @@ function BuffPower:PositionGroupButtons()
 
     local totalWidth = containerWidth + mainFramePaddingX + mainFramePaddingRight
     local totalHeight = containerHeight + mainFramePaddingTitle + mainFramePaddingBottom
-    
-    BuffPowerOrbFrame:SetSize(totalWidth, totalHeight)
+
+    -- Ensure the main frame and its backdrop are always at least as large as the container
+    BuffPowerOrbFrame:SetSize(math.max(totalWidth, 120 + mainFramePaddingX + mainFramePaddingRight), totalHeight)
+    if BuffPowerOrbFrame.SetBackdrop then
+        BuffPowerOrbFrame:SetBackdropColor(0.1, 0.1, 0.1, 0.85)
+    end
 
     -- Ensure all non-displayed group buttons are hidden
     for i=1, MAX_RAID_GROUPS do
