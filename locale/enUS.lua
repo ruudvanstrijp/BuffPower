@@ -1,8 +1,17 @@
 -- locale/enUS.lua
 -- English localization for BuffPower
 
-BuffPower = BuffPower or {}
-local L = {} -- Create a new table for this locale
+-- Ensure the addon name used here matches the one in NewAddon and the .toc file exactly.
+local addonName = "BuffPower" 
+
+-- Get the AceLocale-3.0 library.
+local AceLocale = LibStub("AceLocale-3.0")
+
+-- Register the localization table with AceLocale.
+-- The third argument, true, makes this the default locale if no other is found.
+local L = AceLocale:NewLocale(addonName, "enUS", true)
+
+if not L then return end -- If NewLocale fails (e.g., already registered), exit.
 
 -- General
 L["Configuration"] = "Configuration"
@@ -40,14 +49,9 @@ L["This group is not assigned or you cannot buff."] = "This group is not assigne
 L["You are not a class that can provide this type of buff."] = "You are not a class that can provide this type of buff."
 L["Missing reagent: "] = "Missing reagent: "
 
-
 -- Assignment Menu
 L["Clear Assignment"] = "Clear Assignment"
 L["----- Buffers -----"] = "----- Buffers -----"
 L["No eligible buffers in group/raid."] = "No eligible buffers in group/raid."
 
-
--- Make L available to the addon
-BuffPower.L = L
-
-DEFAULT_CHAT_FRAME:AddMessage("BuffPower enUS locale loaded.")
+DEFAULT_CHAT_FRAME:AddMessage("BuffPower enUS locale registered with AceLocale.")

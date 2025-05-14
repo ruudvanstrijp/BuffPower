@@ -1,8 +1,20 @@
 -- BuffPower.lua
 -- Core logic for BuffPower addon
 
-BuffPower = BuffPower or {}
-local L = BuffPower.L -- For localization, will be set up later
+local addonName = "BuffPower"
+local L = LibStub("AceLocale-3.0"):GetLocale(addonName) -- For localization
+
+-- Attempt to get AceAddon-3.0
+local AceAddon = LibStub("AceAddon-3.0")
+if not AceAddon then
+    print("|cffeda55fBuffPower:|r AceAddon-3.0 not found! Please ensure Ace3 library is installed.")
+    return
+end
+
+-- Create the addon object using AceAddon-3.0
+-- We'll include AceConsole-3.0 for slash commands and AceEvent-3.0 for events.
+-- AceDB-3.0 will be handled by OnInitialize for the database part.
+local BuffPower = AceAddon:NewAddon(addonName, "AceConsole-3.0", "AceEvent-3.0")
 
 -- Constants
 local MAX_RAID_MEMBERS = 40
@@ -25,14 +37,20 @@ local BuffPowerOrbFrame -- The central draggable orb
 local BuffPowerGroupButtons = {} -- Array to hold the group button frames
 
 -- Default Database Structure
-BuffPowerDB = BuffPowerDB or {}
+-- BuffPowerDB = BuffPowerDB or {} -- This will be handled by AceDB in OnInitialize
 
 -- Flag to ensure options panel is created only once
 BuffPower.optionsPanelCreated = false
+BuffPower.optionsPanelName = "BuffPower" -- Add this line to set the correct options panel name
 
--- Helper function for debugging
+-- Helper function for debugging (modified to always print)
 local function DebugPrint(...)
-    -- print("|cffeda55fBuffPower:|r", ...) -- Uncomment for debugging
+    local args = {...}
+    local t = {}
+    for i = 1, #args do
+        t[i] = tostring(args[i])
+    end
+    print("|cffeda55fBuffPower:|r", table.concat(t, " "))
 end
 
 --------------------------------------------------------------------------------
@@ -240,54 +258,48 @@ end
 -- Helper function to update the orb's texture based on lock state
 function BuffPower:UpdateOrbAppearance()
     if not BuffPowerOrbFrame then return end
-    local orbTexture = BuffPowerOrbFrame.texture
-    if not orbTexture then return end
-
+    -- No longer an orb texture, let's change border color for lock state
     if BuffPowerDB and BuffPowerDB.locked then
-        orbTexture:SetTexture(ICON_PATH_ORB_LOCKED)
+        BuffPowerOrbFrame:SetBackdropBorderColor(0.8, 0.2, 0.2, 1) -- Reddish border when locked
     else
-        orbTexture:SetTexture(ICON_PATH_ORB_UNLOCKED)
+        BuffPowerOrbFrame:SetBackdropBorderColor(0.6, 0.6, 0.6, 0.8) -- Default border
     end
 end
 
 function BuffPower:CreateUI()
-    -- Create the central Orb Frame if it doesn't exist
+    -- Create the main Frame if it doesn't exist (formerly BuffPowerOrbFrame)
     if not BuffPowerOrbFrame then
         BuffPowerOrbFrame = CreateFrame("Frame", "BuffPowerOrbFrame", UIParent)
-        BuffPowerOrbFrame:SetSize(ORB_SIZE, ORB_SIZE)
+        -- Size will be set dynamically by PositionGroupButtons
         BuffPowerOrbFrame:SetMovable(true)
         BuffPowerOrbFrame:EnableMouse(true)
         BuffPowerOrbFrame:RegisterForDrag("LeftButton")
-        BuffPowerOrbFrame:SetClampedToScreen(true)        -- Store the texture on the frame for easy access
-        BuffPowerOrbFrame.texture = BuffPowerOrbFrame:CreateTexture(nil, "ARTWORK") -- Use ARTWORK for icons
-        BuffPowerOrbFrame.texture:SetAllPoints(BuffPowerOrbFrame)
-          -- Create a background frame first (like PallyPower's main frame)
-        -- Use BackdropTemplateMixin if available, for compatibility with newer WoW versions
-        BuffPowerOrbFrame.backdrop = CreateFrame("Frame", "BuffPowerBackdrop", BuffPowerOrbFrame)
-        -- Apply BackdropTemplate if available (for WoW Shadowlands and later)
+        BuffPowerOrbFrame:SetClampedToScreen(true)
+
+        -- Apply Backdrop directly to the main frame
         if BackdropTemplateMixin then
-            Mixin(BuffPowerOrbFrame.backdrop, BackdropTemplateMixin)
+            Mixin(BuffPowerOrbFrame, BackdropTemplateMixin)
         end
-        BuffPowerOrbFrame.backdrop:SetPoint("TOPLEFT", BuffPowerOrbFrame, "BOTTOMLEFT", -5, 0)
-        BuffPowerOrbFrame.backdrop:SetSize(210, 210) -- Will be resized based on content
-        
         local backdropInfo = {
             bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
             edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-            tile = true,
-            tileSize = 32,
-            edgeSize = 16,
+            tile = true, tileSize = 32, edgeSize = 16,
             insets = { left = 5, right = 5, top = 5, bottom = 5 }
         }
-        
-        if BuffPowerOrbFrame.backdrop.SetBackdrop then
-            BuffPowerOrbFrame.backdrop:SetBackdrop(backdropInfo)
+        if BuffPowerOrbFrame.SetBackdrop then
+            BuffPowerOrbFrame:SetBackdrop(backdropInfo)
+            BuffPowerOrbFrame:SetBackdropColor(0.1, 0.1, 0.1, 0.85) -- Darker background
         end
         
-        -- Create the main container frame for buttons inside the backdrop
-        BuffPowerOrbFrame.container = CreateFrame("Frame", "BuffPowerContainerFrame", BuffPowerOrbFrame.backdrop)
-        BuffPowerOrbFrame.container:SetPoint("TOPLEFT", BuffPowerOrbFrame.backdrop, "TOPLEFT", 10, -10)
-        BuffPowerOrbFrame.container:SetSize(190, 190) -- Will be resized based on content
+        -- Add a title text at the top of the frame
+        BuffPowerOrbFrame.title = BuffPowerOrbFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        BuffPowerOrbFrame.title:SetPoint("TOP", BuffPowerOrbFrame, "TOP", 0, -8) -- Adjusted for insets
+        BuffPowerOrbFrame.title:SetText("BuffPower")
+
+        -- Create the main container frame for buttons inside the main frame
+        BuffPowerOrbFrame.container = CreateFrame("Frame", "BuffPowerContainerFrame", BuffPowerOrbFrame)
+        BuffPowerOrbFrame.container:SetPoint("TOPLEFT", BuffPowerOrbFrame, "TOPLEFT", 8, -28) -- Below title, adjusted for insets
+        -- Container size will be set by PositionGroupButtons
 
         BuffPowerOrbFrame:SetScript("OnDragStart", function(self)
             if BuffPowerDB and not BuffPowerDB.locked then
@@ -296,24 +308,52 @@ function BuffPower:CreateUI()
         end)
         BuffPowerOrbFrame:SetScript("OnDragStop", function(self)
             self:StopMovingOrSizing()
-            if BuffPowerDB and BuffPowerDB.orbPosition then
+            if BuffPowerDB and BuffPowerDB.orbPosition then -- Keep using orbPosition for now
                 BuffPowerDB.orbPosition.a1, _, BuffPowerDB.orbPosition.a2, BuffPowerDB.orbPosition.x, BuffPowerDB.orbPosition.y = self:GetPoint()
-                BuffPower:PositionGroupButtons() -- Reposition buttons relative to new orb position
+                -- Repositioning buttons is implicitly handled by Show/Hide or UpdateUI calls
             end
+        end)
+
+        BuffPowerOrbFrame:SetScript("OnMouseDown", function(self_frame, mouseButton)
+            if mouseButton == "RightButton" then
+                DebugPrint("RightButton clicked on BuffPowerOrbFrame.")
+
+                if BuffPowerDB and BuffPowerDB.locked then
+                    DebugPrint("UI is locked. Aborting options panel opening.")
+                    DEFAULT_CHAT_FRAME:AddMessage(L["UI is locked. Unlock via options or command."] or "UI is locked.")
+                    return
+                end
+
+                DebugPrint("UI is not locked. Proceeding to open options panel.")
+                DebugPrint("Value of BuffPower.optionsPanelName:", BuffPower.optionsPanelName)
+                DebugPrint("Type of InterfaceOptionsFrame_OpenToCategory:", type(InterfaceOptionsFrame_OpenToCategory))
+                DebugPrint("Type of _G[\"BuffPowerOptionsFrame_Toggle\"]:", type(_G["BuffPowerOptionsFrame_Toggle"]))
+
+                local panelNameToOpen = BuffPower.optionsPanelName -- Use the one set globally
+
+                if panelNameToOpen and type(InterfaceOptionsFrame_OpenToCategory) == "function" then
+                    DebugPrint("Attempting: InterfaceOptionsFrame_OpenToCategory('", panelNameToOpen, "')")
+                    InterfaceOptionsFrame_OpenToCategory(panelNameToOpen)
+                    DebugPrint("Called InterfaceOptionsFrame_OpenToCategory. Check if options panel appeared.")
+                elseif type(_G["BuffPowerOptionsFrame_Toggle"]) == "function" then
+                    DebugPrint("Attempting: _G[\"BuffPowerOptionsFrame_Toggle\"]()")
+                    _G["BuffPowerOptionsFrame_Toggle"]()
+                    DebugPrint("Called _G[\"BuffPowerOptionsFrame_Toggle\"]. Check if options panel appeared.")
+                else
+                    DebugPrint("All methods failed. Displaying 'Options panel not found.' message.")
+                    DEFAULT_CHAT_FRAME:AddMessage(L["Options panel not found. Right-click to configure."] or "Options panel not found.")
+                end
+            end
+            -- LeftButton drag is handled by RegisterForDrag
         end)
         
         -- Set initial position from DB or default
         local pos = (BuffPowerDB and BuffPowerDB.orbPosition) or { a1 = "CENTER", a2 = "CENTER", x = 0, y = 0 }
         BuffPowerOrbFrame:SetPoint(pos.a1, UIParent, pos.a2, pos.x, pos.y)
-        
-        -- Add a title text at the top of the backdrop
-        BuffPowerOrbFrame.title = BuffPowerOrbFrame.backdrop:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-        BuffPowerOrbFrame.title:SetPoint("TOP", BuffPowerOrbFrame.backdrop, "TOP", 0, -5)
-        BuffPowerOrbFrame.title:SetText("BuffPower")
     end
 
-    -- Set initial orb appearance
-    BuffPower:UpdateOrbAppearance() -- Call this to set the correct initial texture
+    -- Set initial appearance (e.g., border for lock state)
+    BuffPower:UpdateOrbAppearance()
 
     -- Create Group Buttons if they don't exist
     for i = 1, MAX_RAID_GROUPS do
@@ -363,7 +403,7 @@ function BuffPower:CreateUI()
             groupButton.text:SetJustifyH("LEFT")
             
             groupButton:SetScript("OnClick", function(self_button, mouseButton)
-                if mouseButton == "LeftButton" then
+                if mouseButton == "RightButton" then -- Cast buff on RightButton
                     local assignment = (BuffPowerDB and BuffPowerDB.assignments) and BuffPowerDB.assignments[self_button.groupID]
                     local _, playerClass = UnitClass("player")
                     local myName = UnitName("player")
@@ -379,7 +419,7 @@ function BuffPower:CreateUI()
                     else
                         DEFAULT_CHAT_FRAME:AddMessage(L["This group is not assigned or you cannot buff."] or "Group not assigned/cannot buff.")
                     end
-                elseif mouseButton == "RightButton" then
+                elseif mouseButton == "LeftButton" then -- Open assignment menu on LeftButton
                     BuffPower:OpenAssignmentMenu(self_button.groupID, self_button)
                 end
             end)
@@ -435,99 +475,101 @@ end
 
 function BuffPower:PositionGroupButtons()
     if not BuffPowerOrbFrame or not BuffPowerOrbFrame:IsVisible() or not BuffPowerOrbFrame.container then
+        for _, btn in pairs(BuffPowerGroupButtons) do if btn then btn:Hide() end end
         return
     end
 
     local effectiveGroupsToDisplay = {}
     if IsInRaid() then
         local numSubgroups = GetNumSubgroups()
-        -- In some cases, GetNumSubgroups might be 0 even if GetNumGroupMembers > 0 (e.g. during raid formation)
         if numSubgroups == 0 and GetNumGroupMembers() > 0 then numSubgroups = math.ceil(GetNumGroupMembers() / MAX_PARTY_MEMBERS) end
-        if numSubgroups == 0 and GetNumGroupMembers() > 0 then numSubgroups = 1 end
+        if numSubgroups == 0 and GetNumGroupMembers() > 0 then numSubgroups = 1 end -- Should be at least 1 if in a group
 
         for i = 1, numSubgroups do
             table.insert(effectiveGroupsToDisplay, i)
         end
-        -- Fallback if GetNumSubgroups was 0 but we are in a raid group
+         -- Fallback if GetNumSubgroups was 0 but we are in a raid group with members
         if #effectiveGroupsToDisplay == 0 and GetNumGroupMembers() > 0 then
-            table.insert(effectiveGroupsToDisplay, 1)
-        end
-    elseif IsInGroup() then -- This covers being in a party
-        table.insert(effectiveGroupsToDisplay, 1) -- "Group 1" represents the player's party
-    elseif GetNumGroupMembers() == 0 then -- Solo (not in a party or raid)
-        table.insert(effectiveGroupsToDisplay, 1) -- Show one button for self buffs / solo context
-    end
+            local numActualGroups = 0
+            for i=1,MAX_RAID_MEMBERS do
+                if UnitInRaid("raid"..i) then
+                    numActualGroups = math.max(numActualGroups, select(5, GetRaidRosterInfo(i)) or 0)
+                end
+            end
+            if numActualGroups == 0 and GetNumGroupMembers() > 0 then numActualGroups = 1 end
 
-    -- Ensure at least one button is considered if the window is shown (e.g. for a solo player)
-    if #effectiveGroupsToDisplay == 0 and BuffPowerDB and BuffPowerDB.showWindow then
-        table.insert(effectiveGroupsToDisplay, 1)
+            for i = 1, numActualGroups do
+                 if not tContains(effectiveGroupsToDisplay, i) then table.insert(effectiveGroupsToDisplay, i) end
+            end
+            if #effectiveGroupsToDisplay == 0 and GetNumGroupMembers() > 0 then table.insert(effectiveGroupsToDisplay, 1) end
+        end
+    elseif IsInGroup() then
+        table.insert(effectiveGroupsToDisplay, 1) 
+    elseif BuffPowerDB and BuffPowerDB.showWindowForSolo then -- Show for solo if option enabled
+        table.insert(effectiveGroupsToDisplay, 1) 
     end
 
     if #effectiveGroupsToDisplay == 0 then
-        for _, button in pairs(BuffPowerGroupButtons) do button:Hide() end -- Hide all if no groups
+        for _, button in pairs(BuffPowerGroupButtons) do if button then button:Hide() end end
+        BuffPowerOrbFrame.container:SetSize(10,10) -- Minimal size
+        BuffPowerOrbFrame:SetSize(30,30) -- Minimal size for anchor
         return
     end
 
-    -- Layout parameters
-    local buttonWidth = 80
+    -- Layout parameters for vertical list
+    local buttonWidth = 80 
     local buttonHeight = 28
-    local horizontalSpacing = 2
     local verticalSpacing = 2
-    local buttonsPerRow = 4 -- Number of buttons in each row for the grid
     
-    -- Calculate padding for the container inside backdrop
-    local containerPaddingX = 10
-    local containerPaddingY = 20 -- Extra padding for the title at top
+    -- Padding for the container inside the main frame
+    local containerInternalPaddingX = 0 -- No horizontal padding needed for a single column
+    local containerInternalPaddingY = 0 -- No vertical padding needed for a single column
 
-    -- Hide all buttons initially
+    -- Hide all buttons initially, then show only the ones needed
     for _, button in pairs(BuffPowerGroupButtons) do 
         if button then button:Hide() end
     end
 
-    -- Set container size based on number of groups
-    local numRows = math.ceil(#effectiveGroupsToDisplay / buttonsPerRow)
-    local containerWidth = (buttonWidth * math.min(buttonsPerRow, #effectiveGroupsToDisplay)) + 
-                           (horizontalSpacing * (math.min(buttonsPerRow, #effectiveGroupsToDisplay) - 1))
-    local containerHeight = (buttonHeight * numRows) + (verticalSpacing * (numRows - 1))
+    local currentYOffset = 0
+    local maxWidth = 0
+
+    for i, groupId in ipairs(effectiveGroupsToDisplay) do
+        local button = BuffPowerGroupButtons[groupId]
+        if button then
+            button:ClearAllPoints()
+            button:SetPoint("TOPLEFT", BuffPowerOrbFrame.container, "TOPLEFT", 0, -currentYOffset)
+            button:Show()
+            BuffPower:UpdateGroupButtonContent(button, groupId) -- Ensure content is up-to-date
+            
+            currentYOffset = currentYOffset + buttonHeight + verticalSpacing
+            maxWidth = math.max(maxWidth, buttonWidth) -- All buttons have same width here
+        else
+            DebugPrint("Button for groupID", groupId, "not found in PositionGroupButtons")
+        end
+    end
+    
+    -- Calculate container size
+    local containerWidth = maxWidth + (containerInternalPaddingX * 2)
+    local containerHeight = math.max(0, currentYOffset - verticalSpacing) + (containerInternalPaddingY * 2) -- Subtract last spacing
     
     BuffPowerOrbFrame.container:SetSize(containerWidth, containerHeight)
     
-    -- Resize backdrop to fit container plus padding
-    if BuffPowerOrbFrame.backdrop then
-        BuffPowerOrbFrame.backdrop:SetSize(
-            containerWidth + (containerPaddingX * 2), 
-            containerHeight + (containerPaddingY + containerPaddingX) -- More padding on top for title
-        )
-    end
+    -- Resize main frame (BuffPowerOrbFrame) to fit container plus its own padding/title
+    -- Main frame's SetPoint for container: TOPLEFT, 8, -28
+    local mainFramePaddingX = 8 -- Left padding for container
+    local mainFramePaddingTitle = 28 -- Top padding for container (includes title area)
+    local mainFramePaddingBottom = 8 -- Bottom padding for main frame
+    local mainFramePaddingRight = 8 -- Right padding for main frame
 
-    -- Position buttons in a grid pattern
-    local currentRow = 0
-    local currentCol = 0
+    local totalWidth = containerWidth + mainFramePaddingX + mainFramePaddingRight
+    local totalHeight = containerHeight + mainFramePaddingTitle + mainFramePaddingBottom
     
-    for i, groupId in ipairs(effectiveGroupsToDisplay) do
-        local button = BuffPowerGroupButtons[groupId]
-        
-        if not button then
-            -- Attempt to use the i-th button as a fallback
-            if BuffPowerGroupButtons[i] then
-                button = BuffPowerGroupButtons[i]
-            end
-        end
-        
-        if button then
-            currentRow = math.floor((i-1) / buttonsPerRow)
-            currentCol = (i-1) % buttonsPerRow
-            
-            button:ClearAllPoints()
-            button:SetSize(buttonWidth, buttonHeight)
-            
-            local xPos = (currentCol * (buttonWidth + horizontalSpacing))
-            local yPos = -(currentRow * (buttonHeight + verticalSpacing))
-            
-            button:SetPoint("TOPLEFT", BuffPowerOrbFrame.container, "TOPLEFT", xPos, yPos)
-            button:Show()
-            
-            self:UpdateGroupButtonContent(button, groupId)
+    BuffPowerOrbFrame:SetSize(totalWidth, totalHeight)
+
+    -- Ensure all non-displayed group buttons are hidden
+    for i=1, MAX_RAID_GROUPS do
+        if not tContains(effectiveGroupsToDisplay, i) and BuffPowerGroupButtons[i] then
+            BuffPowerGroupButtons[i]:Hide()
         end
     end
 end
@@ -644,16 +686,11 @@ end
 -- Addon Lifecycle
 --------------------------------------------------------------------------------
 function BuffPower:OnInitialize()
-    if LibStub and LibStub:GetLibrary("AceDB-3.0", true) then
-        self.db = LibStub("AceDB-3.0"):New("BuffPowerDB", BuffPower.defaults, true)
-        BuffPowerDB = self.db.profile
-    else
-        BuffPowerDB = BuffPowerDB or {}
-        local defaults = (BuffPower.defaults and BuffPower.defaults.profile) or {}
-        for k, v in pairs(defaults) do
-            if BuffPowerDB[k] == nil then BuffPowerDB[k] = (BuffPower.deepcopy and BuffPower.deepcopy(v)) or v end
-        end
-    end
+    -- AceDB initialization
+    self.db = LibStub("AceDB-3.0"):New("BuffPowerDB", BuffPower.defaults, true)
+    BuffPowerDB = self.db.profile -- Make DB readily accessible
+    L = LibStub("AceLocale-3.0"):GetLocale(addonName) -- Ensure L is set up after AceLocale is available
+
     if not BuffPowerDB.orbPosition then BuffPowerDB.orbPosition = { a1 = "CENTER", a2 = "CENTER", x = 0, y = 0 } end
     
     -- Update layout defaults
@@ -665,11 +702,10 @@ function BuffPower:OnInitialize()
             buttonWidth = 180,
             buttonHeight = 25,
             verticalSpacing = 2,
-            listOffsetX = 0,  -- Horizontal offset of the list from the anchor's left
-            listOffsetY = -5  -- Vertical offset of the list from the anchor's bottom (negative is downwards)
+            listOffsetX = 0,
+            listOffsetY = -5
         }
     else
-        -- Add new settings if layout table exists but is missing them (for existing users)
         if BuffPowerDB.layout.buttonWidth == nil then BuffPowerDB.layout.buttonWidth = 180 end
         if BuffPowerDB.layout.buttonHeight == nil then BuffPowerDB.layout.buttonHeight = 25 end
         if BuffPowerDB.layout.verticalSpacing == nil then BuffPowerDB.layout.verticalSpacing = 2 end
@@ -682,24 +718,42 @@ function BuffPower:OnInitialize()
     if not BuffPowerDB.assignments then BuffPowerDB.assignments = {} end
     if not BuffPowerDB.classSettings then BuffPowerDB.classSettings = { MAGE = {enabled=true}, PRIEST = {enabled=true}, DRUID = {enabled=true}} end
 
+    BuffPower.optionsPanelName = "BuffPower" -- Ensure this is set
     L = BuffPower.L or setmetatable({}, { __index = function(t, k) return k end })
     self:RegisterChatCommand("buffpower", "ChatCommand")
     self:RegisterChatCommand("bp", "ChatCommand")
-    if not BuffPower.optionsPanelCreated and self.CreateOptionsPanel then
-        self:CreateOptionsPanel(); BuffPower.optionsPanelCreated = true
-    end
-    DebugPrint("BuffPower Initialized.")
+
+    -- CRITICAL: Ensure no call to self:CreateOptionsPanel() or similar is present here.
+    -- The options panel creation is handled by the ADDON_LOADED event.
+    --[[
+        -- This block should remain commented or removed:
+        if not BuffPower.optionsPanelCreated and self.CreateOptionsPanel then
+            self:CreateOptionsPanel(); BuffPower.optionsPanelCreated = true
+        end
+    --]]
+    DebugPrint("BuffPower OnInitialize finished.") -- Changed message for clarity
 end
 
 function BuffPower:OnEnable()
     local _, playerClass = UnitClass("player")
-    if not BuffPowerDB or not BuffPowerDB.classSettings or not BuffPowerDB.classSettings[playerClass] or not BuffPowerDB.classSettings[playerClass].enabled then return end
-    self:RegisterEvent("PLAYER_LOGIN"); self:RegisterEvent("GROUP_ROSTER_UPDATE")
-    self:RegisterEvent("PLAYER_ENTERING_WORLD"); self:RegisterEvent("CHAT_MSG_ADDON")
+    if not BuffPowerDB or not BuffPowerDB.classSettings or not BuffPowerDB.classSettings[playerClass] or not BuffPowerDB.classSettings[playerClass].enabled then 
+        DebugPrint("Addon not enabled for class: " .. playerClass)
+        return 
+    end
+    self:RegisterEvent("PLAYER_LOGIN"); 
+    self:RegisterEvent("GROUP_ROSTER_UPDATE")
+    self:RegisterEvent("PLAYER_ENTERING_WORLD"); 
+    self:RegisterEvent("CHAT_MSG_ADDON", "OnAddonMessage") -- Directly map CHAT_MSG_ADDON
+    self:RegisterEvent("ADDON_LOADED") -- Register ADDON_LOADED event
+    
+    -- Register slash commands with AceConsole-3.0
+    self:RegisterChatCommand("buffpower", "ChatCommand")
+    self:RegisterChatCommand("bp", "ChatCommand")
+
     if BuffPowerDB and BuffPowerDB.showWindow then
         self:CreateUI(); self:UpdateRoster()
     end
-    DebugPrint("BuffPower Enabled.")
+    DebugPrint("BuffPower Enabled via Ace3.")
 end
 
 function BuffPower:OnDisable()
@@ -707,6 +761,21 @@ function BuffPower:OnDisable()
     if BuffPowerOrbFrame then BuffPowerOrbFrame:Hide() end
     for _, btn in ipairs(BuffPowerGroupButtons) do if btn then btn:Hide() end end
     DebugPrint("BuffPower Disabled.")
+end
+
+function BuffPower:ADDON_LOADED(event, addonName) -- event arg is passed by the OnEvent script
+    if addonName == "BuffPower" then
+        if not BuffPower.optionsPanelCreated and self.CreateOptionsPanel then
+            DebugPrint("ADDON_LOADED(" .. addonName .. "): Attempting to create options panel.")
+            self:CreateOptionsPanel()
+            BuffPower.optionsPanelCreated = true -- Set flag after successful call attempt
+            DebugPrint("ADDON_LOADED(" .. addonName .. "): Options panel creation process called.")
+        elseif BuffPower.optionsPanelCreated then
+            DebugPrint("ADDON_LOADED(" .. addonName .. "): Options panel already created.")
+        elseif not self.CreateOptionsPanel then
+             DebugPrint("ADDON_LOADED(" .. addonName .. "): self.CreateOptionsPanel is nil. BuffPowerOptions.lua might not have loaded or attached it correctly.")
+        end
+    end
 end
 
 function BuffPower:PLAYER_LOGIN()
@@ -730,12 +799,27 @@ end
 function BuffPower:PLAYER_ENTERING_WORLD(isInitialLogin, isReloadingUi)
     if isInitialLogin then self:RequestAssignments() end
     if isInitialLogin or isReloadingUi then
+        -- Options panel creation is now handled by ADDON_LOADED
+        -- Ensure no attempt to create options panel here.
+        --[[
+        if not BuffPower.optionsPanelCreated and self.CreateOptionsPanel then
+            DebugPrint("PLAYER_ENTERING_WORLD: Attempting to create options panel.")
+            self:CreateOptionsPanel()
+            BuffPower.optionsPanelCreated = true
+            DebugPrint("PLAYER_ENTERING_WORLD: Options panel creation process called.")
+        elseif BuffPower.optionsPanelCreated then
+            DebugPrint("PLAYER_ENTERING_WORLD: Options panel already created.")
+        elseif not self.CreateOptionsPanel then
+            DebugPrint("PLAYER_ENTERING_WORLD: self.CreateOptionsPanel is nil.")
+        end
+        ]]
+
         self:UpdateRoster()
         if BuffPowerDB and BuffPowerDB.showWindow then
             if not BuffPowerOrbFrame then self:CreateUI()
             elseif BuffPowerOrbFrame and not BuffPowerOrbFrame:IsVisible() then
                 BuffPowerOrbFrame:Show()
-                BuffPower:UpdateOrbAppearance() -- Update appearance on show
+                BuffPower:UpdateOrbAppearance()
             end
             self:UpdateUI()
         end
@@ -771,10 +855,16 @@ function BuffPower:ChatCommand(input)
         BuffPower:UpdateOrbAppearance() -- Update texture
         DEFAULT_CHAT_FRAME:AddMessage("BuffPower: " .. (L["Window unlocked."] or "Orb unlocked."))
     elseif input == "config" or input == "options" then
-        if InterfaceOptionsFrame_OpenToCategory and _G["BuffPowerOptionsPanel"] then
-            InterfaceOptionsFrame_OpenToCategory(_G["BuffPowerOptionsPanel"].name or "BuffPower")
+        -- Check if the options panel object exists and has a name
+        local panelToShow = _G[(BuffPower.optionsPanelName or "BuffPower") .. "OptionsPanel"] or _G["BuffPowerOptionsPanel"]
+
+        if InterfaceOptionsFrame_OpenToCategory and panelToShow and panelToShow.name then
+            InterfaceOptionsFrame_OpenToCategory(panelToShow.name)
+        elseif InterfaceOptionsFrame_OpenToCategory and _G["BuffPowerOptionsPanel"] then -- Fallback
+             InterfaceOptionsFrame_OpenToCategory(_G["BuffPowerOptionsPanel"].name or "BuffPower")
         else
-            DEFAULT_CHAT_FRAME:AddMessage("BuffPower: Options panel not available.")
+            DEFAULT_CHAT_FRAME:AddMessage("BuffPower: Options panel not available or not fully initialized.")
+            DebugPrint("BuffPower: Config attempt. InterfaceOptionsFrame_OpenToCategory:", InterfaceOptionsFrame_OpenToCategory, "Panel to show:", panelToShow, "BuffPower.optionsPanelName:", BuffPower.optionsPanelName)
         end
     elseif input == "reset" then
         if BuffPower.defaults and BuffPower.deepcopy then
@@ -808,43 +898,6 @@ function BuffPower:ChatCommand(input)
     end
 end
 
--- Event Frame and Registration (Simplified Ace3-like)
-local eventFrame = CreateFrame("Frame", "BuffPowerEventFrame")
-BuffPower.eventFrame = eventFrame
-BuffPower.eventHandlers = BuffPower.eventHandlers or {}
-
-function BuffPower:RegisterEvent(event, method)
-    if not method then method = event end
-    self.eventFrame:RegisterEvent(event)
-    if not self.eventHandlers[event] then self.eventHandlers[event] = {} end
-    table.insert(self.eventHandlers[event], method)
-end
-
-function BuffPower:UnregisterAllEvents()
-    if self.eventFrame then self.eventFrame:UnregisterAllEvents() end
-    self.eventHandlers = {}
-end
-
-BuffPower.eventFrame:SetScript("OnEvent", function(frame, event, ...)
-    if BuffPower.eventHandlers and BuffPower.eventHandlers[event] then
-        for _, handlerName in ipairs(BuffPower.eventHandlers[event]) do
-            local handlerFunc = BuffPower[handlerName]
-            if type(handlerFunc) == "function" then
-                handlerFunc(BuffPower, ...)
-            end
-        end
-    end
-end)
-
-function BuffPower:RegisterChatCommand(cmd, handlerMethodName)
-    if cmd == "buffpower" then SLASH_BUFFPOWER1 = "/buffpower" end
-    if cmd == "bp" then SLASH_BUFFPOWER2 = "/bp" end
-    if not SlashCmdList then SlashCmdList = {} end
-    SlashCmdList["BUFFPOWER"] = function(msg)
-        if BuffPower[handlerMethodName] then BuffPower[handlerMethodName](BuffPower, msg) end
-    end
-end
-
 function BuffPower.deepcopy(orig)
     local orig_type = type(orig)
     local copy
@@ -859,7 +912,3 @@ function BuffPower.deepcopy(orig)
 end
 
 L = BuffPower.L or setmetatable({}, { __index = function(t,k) return k end })
-BuffPower:OnInitialize()
-BuffPower:OnEnable()
-
-DEFAULT_CHAT_FRAME:AddMessage("BuffPower.lua loaded (UI Overhaul with Custom Icons)")
