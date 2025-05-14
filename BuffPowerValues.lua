@@ -114,3 +114,9 @@ BuffPower.defaults = {
 }
 
 DEFAULT_CHAT_FRAME:AddMessage("BuffPowerValues.lua loaded")
+if BuffPower and BuffPower.ClassBuffInfo then
+    print("BuffPowerValues DEBUG (end of file): ClassBuffInfo keys:")
+    for k,v in pairs(BuffPower.ClassBuffInfo) do print("  key:", k, "value:", v and "table" or "nil") end
+else
+    print("BuffPowerValues DEBUG (end of file): BuffPower.ClassBuffInfo is nil")
+end

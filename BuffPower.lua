@@ -12,6 +12,11 @@ end
 
 -- Create the addon object using AceAddon-3.0
 local BuffPower = AceAddon:NewAddon(addonName, "AceConsole-3.0", "AceEvent-3.0")
+-- Merge BuffPowerValues static fields into the AceAddon object and preserve the global (fixes static table overwrite bug)
+if _G.BuffPower then
+    for k, v in pairs(_G.BuffPower) do BuffPower[k] = v end
+end
+_G.BuffPower = BuffPower
 
 -- Get Locale table *after* NewAddon, similar to PallyPower
 local L = LibStub("AceLocale-3.0"):GetLocale(addonName) 
@@ -31,6 +36,9 @@ local ICON_PATH_ORB_LOCKED = "Interface\\AddOns\\BuffPower\\Icons\\draghandle-ch
 
 -- Ace3 Stubs
 local LibStub = _G.LibStub
+
+-- LibUIDropDownMenu compatibility
+local L_UIDropDown = LibStub and LibStub("LibUIDropDownMenu-4.0", true)
 
 -- UI Frames
 local BuffPowerOrbFrame -- The central draggable orb
@@ -66,25 +74,57 @@ local function BuffPower_ShowGroupMemberFrame(anchorButton, groupId)
     local members = BuffPower:GetGroupMembers(groupId)
     local buttonHeight, buttonWidth, verticalSpacing = 22, 120, 1
     local yOffset = -8
+    local _, playerClass = UnitClass("player")
+    local buffInfo = BuffPower.ClassBuffInfo and BuffPower.ClassBuffInfo[playerClass]
     for idx, member in ipairs(members) do
-        local btn = CreateFrame("Button", "BuffPowerGroupMemberButton"..idx, BuffPowerGroupMemberFrame, "OptionsButtonTemplate")
+        local btn = CreateFrame("Button", "BuffPowerGroupMemberButton"..idx, BuffPowerGroupMemberFrame, "SecureActionButtonTemplate")
         btn:SetSize(buttonWidth, buttonHeight)
         btn:SetPoint("TOPLEFT", 8, yOffset)
         yOffset = yOffset - (buttonHeight + verticalSpacing)
 
         local classColorHex = (BuffPower.ClassColors and BuffPower.ClassColors[member.class] and BuffPower.ClassColors[member.class].hex) or "|cffffffff"
-        btn:SetText(classColorHex..member.name.."|r")
+        local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        label:SetPoint("LEFT", btn, "LEFT", 8, 0)
+        label:SetText(classColorHex..member.name.."|r")
+        btn.label = label
 
-        btn:SetScript("OnClick", function(selfB, mouseButton)
-            if mouseButton == "RightButton" then
-                BuffPower:CastBuff(groupId, member.name)
-                BuffPowerGroupMemberFrame:Hide()
+        -- Secure attributes for real spell cast!
+        if buffInfo then
+            btn:SetAttribute("type", "spell")
+            btn:SetAttribute("spell", buffInfo.single_spell_name)
+            -- Prefer member.unitid (e.g. "player", "party1"), otherwise fallback to name
+            if member.unitid then
+                btn:SetAttribute("unit", member.unitid)
+            else
+                btn:SetAttribute("unit", member.name)
+            end
+            btn.tooltip = "Left-click to buff "..member.name.." with "..buffInfo.single_spell_name
+        else
+            btn.tooltip = "Cannot find buff for class "..tostring(playerClass)
+            btn:SetAttribute("type", nil)
+            btn:SetAttribute("spell", nil)
+            btn:SetAttribute("unit", nil)
+        end
+
+        btn:SetScript("OnEnter", function(selfB)
+            selfB.bg:SetColorTexture(0.3,0.3,0.6,1)
+            if selfB.tooltip then
+                GameTooltip:SetOwner(selfB, "ANCHOR_RIGHT")
+                GameTooltip:SetText(selfB.tooltip)
+                GameTooltip:Show()
             end
         end)
-        btn:SetScript("OnEnter", function(selfB) selfB:LockHighlight() end)
-        btn:SetScript("OnLeave", function(selfB) selfB:UnlockHighlight() end)
+        btn:SetScript("OnLeave", function(selfB)
+            selfB.bg:SetColorTexture(0,0,0,0.3)
+            GameTooltip:Hide()
+        end)
+
         btn:Show()
         btn:RegisterForClicks("AnyUp")
+        -- Add a simple highlight
+        btn.bg = btn:CreateTexture(nil, "BACKGROUND")
+        btn.bg:SetAllPoints()
+        btn.bg:SetColorTexture(0,0,0,0.3)
         BuffPowerGroupMemberFrame.buttons[#BuffPowerGroupMemberFrame.buttons+1] = btn
     end
 
@@ -256,7 +296,17 @@ function BuffPower:CastBuff(groupId, targetName)
         return
     end
 
+    -- DEBUGGING: Record what's going on with class and buff lookup
+    print("BuffPower DEBUG: playerClass:", tostring(playerClass), "targetName:", tostring(targetName))
+    local _clbt = BuffPower.ClassBuffInfo
+    if _clbt then
+        for k,v in pairs(_clbt) do print("BuffPower DEBUG: ClassBuffInfo key:", k, "value exists:", v and "yes" or "nil") end
+    else
+        print("BuffPower DEBUG: ClassBuffInfo is nil!")
+    end
+
     local buffInfo = (BuffPower.ClassBuffInfo and playerClass) and BuffPower.ClassBuffInfo[playerClass]
+    print("BuffPower DEBUG: buffInfo exists?", buffInfo and "yes" or "nil")
     if not buffInfo then
         DEFAULT_CHAT_FRAME:AddMessage("|cffff9933BuffPower:|r You are not a supported class for buffing.")
         return
@@ -482,6 +532,8 @@ function BuffPower:CreateUI()
             groupButton.bg:SetAllPoints()
             groupButton.bg:SetColorTexture(0.1, 0.1, 0.1, 0.7) -- Dark background            -- Add a border
             groupButton.border = CreateFrame("Frame", nil, groupButton)
+            -- Prevent it from blocking mouse events
+            groupButton.border:SetFrameLevel(groupButton:GetFrameLevel() - 1)
             -- Apply BackdropTemplate if available
             if BackdropTemplateMixin then
                 Mixin(groupButton.border, BackdropTemplateMixin)
@@ -793,7 +845,11 @@ function BuffPower:OpenAssignmentMenu(groupId, anchorFrame)
             })
         end
     end
-    EasyMenu(menuList, assignmentMenu, anchorFrame, 0, 0, "MENU")
+    if L_UIDropDown and L_UIDropDown.EasyMenu then
+        L_UIDropDown:EasyMenu(menuList, assignmentMenu, anchorFrame, 0, 0, "MENU")
+    else
+        DEFAULT_CHAT_FRAME:AddMessage("BuffPower: LibUIDropDownMenu-4.0 not found or not loaded. Assignment menu cannot be displayed.")
+    end
 end
 
 --------------------------------------------------------------------------------

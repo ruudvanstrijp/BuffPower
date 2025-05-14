@@ -1,7 +1,6 @@
 -- BuffPowerOptions.lua
 -- Configuration options for BuffPower
 
-BuffPower = BuffPower or {}
 local L = BuffPower.L -- Localization
 
 function BuffPower:CreateOptionsPanel()
