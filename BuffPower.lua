@@ -85,20 +85,44 @@ local function BuffPower_ShowGroupMemberFrame(anchorButton, groupId)
         local classColorHex = (BuffPower.ClassColors and BuffPower.ClassColors[member.class] and BuffPower.ClassColors[member.class].hex) or "|cffffffff"
         local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         label:SetPoint("LEFT", btn, "LEFT", 8, 0)
+        -- Buff detection logic:
+        local needsBuff = true
+        if buffInfo and member.unitid then
+            -- Classic API: UnitAura(unit, index, "HELPFUL")
+            local i = 1
+            while true do
+                local bname = UnitAura(member.unitid, i, "HELPFUL")
+                if not bname then break end
+                if bname == buffInfo.single_spell_name or bname == buffInfo.group_spell_name then
+                    needsBuff = false
+                    break
+                end
+                i = i + 1
+            end
+        end
+
+        -- Color: gray-red if needs buff, white-green if buffed
+        local color
+        if needsBuff then
+            color = { r = 1, g = 0.2, b = 0.2 } -- reddish
+        else
+            color = { r = 0.2, g = 1, b = 0.2 } -- green
+        end
+
         label:SetText(classColorHex..member.name.."|r")
+        label:SetTextColor(color.r, color.g, color.b)
         btn.label = label
 
         -- Secure attributes for real spell cast!
         if buffInfo then
             btn:SetAttribute("type", "spell")
             btn:SetAttribute("spell", buffInfo.single_spell_name)
-            -- Prefer member.unitid (e.g. "player", "party1"), otherwise fallback to name
             if member.unitid then
                 btn:SetAttribute("unit", member.unitid)
             else
                 btn:SetAttribute("unit", member.name)
             end
-            btn.tooltip = "Left-click to buff "..member.name.." with "..buffInfo.single_spell_name
+            btn.tooltip = (needsBuff and "|cffff3333Needs buff! " or "|cff33ff33Buffed. ") .. "Click to buff "..member.name.." with "..buffInfo.single_spell_name
         else
             btn.tooltip = "Cannot find buff for class "..tostring(playerClass)
             btn:SetAttribute("type", nil)
@@ -106,25 +130,88 @@ local function BuffPower_ShowGroupMemberFrame(anchorButton, groupId)
             btn:SetAttribute("unit", nil)
         end
 
-        btn:SetScript("OnEnter", function(selfB)
-            selfB.bg:SetColorTexture(0.3,0.3,0.6,1)
-            if selfB.tooltip then
-                GameTooltip:SetOwner(selfB, "ANCHOR_RIGHT")
-                GameTooltip:SetText(selfB.tooltip)
-                GameTooltip:Show()
-            end
-        end)
-        btn:SetScript("OnLeave", function(selfB)
-            selfB.bg:SetColorTexture(0,0,0,0.3)
-            GameTooltip:Hide()
-        end)
+        -- No mouseover logic is needed for member buttons
 
         btn:Show()
         btn:RegisterForClicks("AnyUp")
         -- Add a simple highlight
         btn.bg = btn:CreateTexture(nil, "BACKGROUND")
         btn.bg:SetAllPoints()
-        btn.bg:SetColorTexture(0,0,0,0.3)
+        -- Instead of gray, green or red based on buff state:
+        if needsBuff then
+            btn.bg:SetColorTexture(1, 0.2, 0.2, 0.5)  -- reddish
+        else
+            btn.bg:SetColorTexture(0.2, 1, 0.2, 0.5)  -- greenish
+            -- Set up periodic updates to keep the backgrounds live while visible
+            if not BuffPowerGroupMemberFrame.UpdateBackdrop then
+                function BuffPowerGroupMemberFrame:UpdateBackdrop()
+                    if not self:IsShown() or not self.lastGroupId then return end
+                    local members = BuffPower:GetGroupMembers(self.lastGroupId)
+                    local _, playerClass = UnitClass("player")
+                    local buffInfo = BuffPower.ClassBuffInfo and BuffPower.ClassBuffInfo[playerClass]
+                    for idx, member in ipairs(members) do
+                        local btn = self.buttons[idx]
+                        if btn and btn.bg then
+                            local needsBuff = true
+                            if buffInfo and member.unitid then
+                                local i = 1
+                                while true do
+                                    local bname = UnitAura(member.unitid, i, "HELPFUL")
+                                    if not bname then break end
+                                    if bname == buffInfo.single_spell_name or bname == buffInfo.group_spell_name then
+                                        needsBuff = false
+                                        break
+                                    end
+                                    i = i + 1
+                                end
+                            end
+                            if needsBuff then
+                                btn.bg:SetColorTexture(1, 0.2, 0.2, 0.5)
+                            else
+                                btn.bg:SetColorTexture(0.2, 1, 0.2, 0.5)
+                            end
+                        end
+                    end
+                end
+            end
+        
+            BuffPowerGroupMemberFrame.lastGroupId = groupId
+            -- Start or restart the ticker every time the frame is shown
+            if BuffPowerGroupMemberFrame.updateTicker then
+                BuffPowerGroupMemberFrame.updateTicker:Cancel()
+                BuffPowerGroupMemberFrame.updateTicker = nil
+            end
+            BuffPowerGroupMemberFrame.updateTicker = C_Timer.NewTicker(0.5, function()
+                if BuffPowerGroupMemberFrame:IsShown() and BuffPowerGroupMemberFrame.lastGroupId then
+                    BuffPowerGroupMemberFrame:UpdateBackdrop()
+                end
+            end)
+        
+            -- Also stop the ticker when the frame is hidden
+            if not BuffPowerGroupMemberFrame._tickerHooked then
+                BuffPowerGroupMemberFrame._tickerHooked = true
+                BuffPowerGroupMemberFrame:HookScript("OnHide", function(self)
+                    if self.updateTicker then self.updateTicker:Cancel(); self.updateTicker = nil end
+                end)
+            end
+        end
+        -- Feedback animation on click: quick border flash
+        btn.anim = btn:CreateAnimationGroup()
+        btn.anim.fade = btn.anim:CreateAnimation("Alpha")
+        btn.anim.fade:SetFromAlpha(1)
+        btn.anim.fade:SetToAlpha(0.5)
+        btn.anim.fade:SetDuration(0.08)
+        btn.anim.fade:SetOrder(1)
+        btn.anim.fade2 = btn.anim:CreateAnimation("Alpha")
+        btn.anim.fade2:SetFromAlpha(0.5)
+        btn.anim.fade2:SetToAlpha(1)
+        btn.anim.fade2:SetDuration(0.16)
+        btn.anim.fade2:SetOrder(2)
+
+        btn:SetScript("PostClick", function(selfB)
+            if selfB.anim then selfB.anim:Play() end
+        end)
+
         BuffPowerGroupMemberFrame.buttons[#BuffPowerGroupMemberFrame.buttons+1] = btn
     end
 
@@ -207,8 +294,25 @@ function BuffPower:UpdateRoster()
                 local name, realm = UnitName(unitid)
                 if realm and realm ~= "" then name = name .. "-" .. realm end
                 local _, class = UnitClass(unitid)
-                local groupID = GetRaidSubgroup(unitid)
-                if not isInRaid then groupID = 1 end
+                local groupID
+                if isInRaid then
+                    if GetRaidSubgroup then
+                        groupID = GetRaidSubgroup(unitid)
+                    elseif GetRaidRosterInfo then
+                        groupID = 1
+                        for r=1,MAX_RAID_MEMBERS do
+                            local n, _, subgroup = GetRaidRosterInfo(r)
+                            if n == name then
+                                groupID = subgroup
+                                break
+                            end
+                        end
+                    else
+                        groupID = 1
+                    end
+                else
+                    groupID = 1
+                end
                 local isPlayer = UnitIsUnit(unitid, "player")
                 if name and class and groupID then
                     table.insert(BuffPower.Roster, { name = name, class = class, group = groupID, unitid = unitid, isPlayer = isPlayer })
@@ -220,7 +324,25 @@ function BuffPower:UpdateRoster()
         if (IsInGroup() or IsInRaid()) and not BuffPower:IsPlayerInRoster() then
             local name, _ = UnitName("player")
             local _, class = UnitClass("player")
-            local group = GetRaidSubgroup("player") or 1
+            local group
+            if isInRaid then
+                if GetRaidSubgroup then
+                    group = GetRaidSubgroup("player")
+                elseif GetRaidRosterInfo then
+                    group = 1
+                    for r=1,MAX_RAID_MEMBERS do
+                        local n, _, subgroup = GetRaidRosterInfo(r)
+                        if n == name then
+                            group = subgroup
+                            break
+                        end
+                    end
+                else
+                    group = 1
+                end
+            else
+                group = 1
+            end
             if name and class then
                 table.insert(BuffPower.Roster, { name = name, class = class, group = group, unitid = "player", isPlayer = true })
             end
@@ -654,19 +776,36 @@ function BuffPower:PositionGroupButtons()
 
     local effectiveGroupsToDisplay = {}
     if IsInRaid() then
-        local numSubgroups = GetNumSubgroups()
-        if numSubgroups == 0 and GetNumGroupMembers() > 0 then numSubgroups = math.ceil(GetNumGroupMembers() / MAX_PARTY_MEMBERS) end
-        if numSubgroups == 0 and GetNumGroupMembers() > 0 then numSubgroups = 1 end -- Should be at least 1 if in a group
+        local numSubgroups = 0
+        if GetNumSubgroups then
+            numSubgroups = GetNumSubgroups()
+        elseif GetNumGroupMembers then
+            -- Fallback: count highest subgroup number in the raid
+            for i=1,MAX_RAID_MEMBERS do
+                if UnitInRaid and UnitInRaid("raid"..i) and GetRaidRosterInfo then
+                    local _, _, subgroup = GetRaidRosterInfo(i)
+                    if subgroup and subgroup > numSubgroups then
+                        numSubgroups = subgroup
+                    end
+                end
+            end
+        end
+        if numSubgroups == 0 and GetNumGroupMembers and GetNumGroupMembers() > 0 then
+            numSubgroups = math.ceil(GetNumGroupMembers() / MAX_PARTY_MEMBERS)
+        end
+        if numSubgroups == 0 and GetNumGroupMembers and GetNumGroupMembers() > 0 then numSubgroups = 1 end
 
         for i = 1, numSubgroups do
             table.insert(effectiveGroupsToDisplay, i)
         end
-         -- Fallback if GetNumSubgroups was 0 but we are in a raid group with members
-        if #effectiveGroupsToDisplay == 0 and GetNumGroupMembers() > 0 then
+         -- Fallback if no groups recognized but we have members
+        if #effectiveGroupsToDisplay == 0 and GetNumGroupMembers and GetNumGroupMembers() > 0 then
             local numActualGroups = 0
-            for i=1,MAX_RAID_MEMBERS do
-                if UnitInRaid("raid"..i) then
-                    numActualGroups = math.max(numActualGroups, select(5, GetRaidRosterInfo(i)) or 0)
+            if GetRaidRosterInfo then
+                for i=1,MAX_RAID_MEMBERS do
+                    if UnitInRaid and UnitInRaid("raid"..i) then
+                        numActualGroups = math.max(numActualGroups, select(5, GetRaidRosterInfo(i)) or 0)
+                    end
                 end
             end
             if numActualGroups == 0 and GetNumGroupMembers() > 0 then numActualGroups = 1 end
