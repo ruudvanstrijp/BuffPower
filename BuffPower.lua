@@ -35,6 +35,68 @@ local LibStub = _G.LibStub
 -- UI Frames
 local BuffPowerOrbFrame -- The central draggable orb
 local BuffPowerGroupButtons = {} -- Array to hold the group button frames
+-- Main group member popout frame (created on demand)
+local BuffPowerGroupMemberFrame -- Will be managed in CreateUI and group button handlers
+local function BuffPower_ShowGroupMemberFrame(anchorButton, groupId)
+    -- Create the member frame if needed
+    if not BuffPowerGroupMemberFrame then
+        BuffPowerGroupMemberFrame = CreateFrame("Frame", "BuffPowerGroupMemberFrame", UIParent, BackdropTemplateMixin and "BackdropTemplate")
+        BuffPowerGroupMemberFrame:SetFrameStrata("TOOLTIP")
+        BuffPowerGroupMemberFrame:SetBackdrop({
+            bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            tile = true, tileSize = 16, edgeSize = 8,
+            insets = { left = 2, right = 2, top = 2, bottom = 2 }
+        })
+        BuffPowerGroupMemberFrame:SetBackdropColor(0,0,0,0.9)
+        BuffPowerGroupMemberFrame:SetMovable(false)
+
+        -- Hide frame on mouse leave unless mouse hovers child
+        BuffPowerGroupMemberFrame:SetScript("OnLeave", function(self)
+            self:Hide()
+        end)
+    end
+
+    -- Remove old member buttons
+    if BuffPowerGroupMemberFrame.buttons then
+        for _, btn in ipairs(BuffPowerGroupMemberFrame.buttons) do btn:Hide() btn:SetParent(nil) end
+    end
+    BuffPowerGroupMemberFrame.buttons = {}
+
+    local members = BuffPower:GetGroupMembers(groupId)
+    local buttonHeight, buttonWidth, verticalSpacing = 22, 120, 1
+    local yOffset = -8
+    for idx, member in ipairs(members) do
+        local btn = CreateFrame("Button", "BuffPowerGroupMemberButton"..idx, BuffPowerGroupMemberFrame, "OptionsButtonTemplate")
+        btn:SetSize(buttonWidth, buttonHeight)
+        btn:SetPoint("TOPLEFT", 8, yOffset)
+        yOffset = yOffset - (buttonHeight + verticalSpacing)
+
+        local classColorHex = (BuffPower.ClassColors and BuffPower.ClassColors[member.class] and BuffPower.ClassColors[member.class].hex) or "|cffffffff"
+        btn:SetText(classColorHex..member.name.."|r")
+
+        btn:SetScript("OnClick", function(selfB, mouseButton)
+            if mouseButton == "RightButton" then
+                BuffPower:CastBuff(groupId, member.name)
+                BuffPowerGroupMemberFrame:Hide()
+            end
+        end)
+        btn:SetScript("OnEnter", function(selfB) selfB:LockHighlight() end)
+        btn:SetScript("OnLeave", function(selfB) selfB:UnlockHighlight() end)
+        btn:Show()
+        btn:RegisterForClicks("AnyUp")
+        BuffPowerGroupMemberFrame.buttons[#BuffPowerGroupMemberFrame.buttons+1] = btn
+    end
+
+    -- Set frame size based on members
+    local h = (#members > 0 and (#members * (buttonHeight + verticalSpacing) + 16)) or 20
+    BuffPowerGroupMemberFrame:SetSize(buttonWidth + 16, h)
+
+    -- Position the frame to the right of the anchor button
+    local x, y = anchorButton:GetRight(), select(2, anchorButton:GetCenter())
+    BuffPowerGroupMemberFrame:SetPoint("LEFT", anchorButton, "RIGHT", 8, 0)
+    BuffPowerGroupMemberFrame:Show()
+end
 
 -- Default Database Structure
 -- BuffPowerDB = BuffPowerDB or {} -- This will be handled by AceDB in OnInitialize
@@ -478,40 +540,20 @@ function BuffPower:CreateUI()
             end)
             
             groupButton:SetScript("OnEnter", function(self_button)
-                if not BuffPowerDB or not BuffPowerDB.showTooltips then return end
-                GameTooltip:SetOwner(self_button, "ANCHOR_RIGHT")
-                local assignment = (BuffPowerDB and BuffPowerDB.assignments) and BuffPowerDB.assignments[self_button.groupID]
-                local title
-                if assignment and assignment.playerName and BuffPower.ClassColors and BuffPower.ClassBuffInfo and BuffPower.ClassBuffInfo[assignment.playerClass] then
-                    local classColorHex = BuffPower.ClassColors[assignment.playerClass].hex or "|cffffffff"
-                    title = string.format(L["Group %d: Assigned to %s%s|r"] or "Group %d: Assigned to %s%s|r", self_button.groupID, classColorHex, assignment.playerName)
-                    local buffInfo = BuffPower.ClassBuffInfo[assignment.playerClass]
-                    GameTooltip:AddLine(string.format(L["Buff: %s%s|r (%s)"] or "Buff: %s%s|r (%s)", classColorHex, buffInfo.name, assignment.playerClass),1,1,1)
-                else
-                    title = string.format(L["Group %d: Unassigned"] or "Group %d: Unassigned", self_button.groupID)
-                    GameTooltip:AddLine(L["Right-click to assign a buffer."] or "Right-click to assign.",1,1,1)
-                end
-                GameTooltip:AddLine(title, 1,1,1, true)
-                if BuffPowerDB.showGroupMemberNames then
-                    local members = BuffPower:GetGroupMembers(self_button.groupID)
-                    if #members > 0 then
-                        GameTooltip:AddLine(" ")
-                        GameTooltip:AddLine(L["Group Members:"] or "Group Members:")
-                        for _, member in ipairs(members) do
-                            local classColorHex = (BuffPower.ClassColors and BuffPower.ClassColors[member.class] and BuffPower.ClassColors[member.class].hex) or "|cffffffff"
-                            GameTooltip:AddLine(string.format("- %s%s|r", classColorHex, member.name))
-                        end
-                        -- UI/UX tip for single buffs (workaround for tooltip interaction limits)
-                        GameTooltip:AddLine(" ", 1,1,1)
-                        GameTooltip:AddLine("|cff9999ffTip:|r Use |cffffff00Left-Click|r for menu, then select a group member to single-buff.", 1,1,1, true)
-                    else
-                         GameTooltip:AddLine(L["No members in this group (or not in a group)."] or "No members in group.")
-                    end
-                end
-                GameTooltip:Show()
+                -- Hide tooltip and show the interactive member frame instead
+                if BuffPowerGroupMemberFrame and BuffPowerGroupMemberFrame:IsShown() then BuffPowerGroupMemberFrame:Hide() end
+                BuffPower_ShowGroupMemberFrame(self_button, self_button.groupID)
             end)
-            
-            groupButton:SetScript("OnLeave", function(self_button) GameTooltip:Hide() end)
+
+            groupButton:SetScript("OnLeave", function(self_button)
+                -- Hide frame after short delay if the mouse truly left all related widgets
+                C_Timer.After(0.1, function()
+                    if (not MouseIsOver(self_button)) and (not (BuffPowerGroupMemberFrame and MouseIsOver(BuffPowerGroupMemberFrame))) then
+                        if BuffPowerGroupMemberFrame then BuffPowerGroupMemberFrame:Hide() end
+                    end
+                end)
+            end)
+            -- Also ensure member frame hides itself properly on mouseleave (already set above)
             groupButton:Hide() -- Initially hide
             BuffPowerGroupButtons[i] = groupButton
         end
@@ -792,6 +834,7 @@ function BuffPower:OnInitialize()
     end
 
     if BuffPowerDB.showWindow == nil then BuffPowerDB.showWindow = true end
+    if BuffPowerDB.showWindowForSolo == nil then BuffPowerDB.showWindowForSolo = true end
     if BuffPowerDB.locked == nil then BuffPowerDB.locked = false end
     if not BuffPowerDB.assignments then BuffPowerDB.assignments = {} end
     if not BuffPowerDB.classSettings then BuffPowerDB.classSettings = { MAGE = {enabled=true}, PRIEST = {enabled=true}, DRUID = {enabled=true}} end

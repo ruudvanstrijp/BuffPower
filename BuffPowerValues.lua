@@ -97,6 +97,7 @@ BuffPower.defaults = {
     profile = {
         enabled = true,
         showWindow = true,
+        showWindowForSolo = true, -- Show Group 1 even when solo!
         locked = false,
         scale = 1.0,
         position = { a1 = "CENTER", a2 = "CENTER", x = 0, y = 0 },
