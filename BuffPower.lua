@@ -172,10 +172,17 @@ function BuffPower:ClearGroupAssignment(groupId)
 end
 
 -- 5. Buff Casting Logic
+--[[
+    Casts a group or single-target buff. If spell info is missing or not implemented,
+    prints a placeholder message to notify the user, suitable for UI prototype/UX demonstration.
+    groupId: number (1-8)
+    targetName: string or nil (for single-target)
+]]
 function BuffPower:CastBuff(groupId, targetName)
     local _, playerClass = UnitClass("player")
     local assignment = (BuffPowerDB and BuffPowerDB.assignments) and BuffPowerDB.assignments[groupId]
     local canPlayerBuffThisGroup = false
+
     if assignment and assignment.playerName == UnitName("player") then
         canPlayerBuffThisGroup = true
     elseif (not assignment or not assignment.playerName) and BuffPower:PlayerCanBuff() then
@@ -186,20 +193,65 @@ function BuffPower:CastBuff(groupId, targetName)
         DEFAULT_CHAT_FRAME:AddMessage(L["You are not assigned to buff this group."] or "Not assigned to buff this group.")
         return
     end
+
     local buffInfo = (BuffPower.ClassBuffInfo and playerClass) and BuffPower.ClassBuffInfo[playerClass]
-    if not buffInfo then return end
+    if not buffInfo then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff9933BuffPower:|r You are not a supported class for buffing.")
+        return
+    end
 
-    local spellIdToCast, spellNameToCast, castTarget = targetName and buffInfo.single_spell_id or buffInfo.group_spell_id, targetName and buffInfo.single_spell_name or buffInfo.group_spell_name, targetName
+    local isGroup = (not targetName)
+    local spellNameToCast = isGroup and buffInfo.group_spell_name or buffInfo.single_spell_name
 
-    if spellIdToCast then
-        if playerClass == "MAGE" and not targetName then
-            local reagentName = "Arcane Powder"
-            if GetItemCount(reagentName) == 0 then
-                DEFAULT_CHAT_FRAME:AddMessage((L["Missing reagent: "] or "Missing reagent: ") .. reagentName)
+    -- Check if player knows spell
+    local spellKnown = IsSpellKnown and IsSpellKnown(isGroup and buffInfo.group_spell_id or buffInfo.single_spell_id)
+    if not spellKnown then
+        DEFAULT_CHAT_FRAME:AddMessage(
+            string.format("|cffff9933BuffPower:|r You do not know the spell '%s'.", spellNameToCast)
+        )
+        return
+    end
+
+    -- Reagent checks for group buffs
+    if isGroup then
+        if playerClass == "MAGE" then
+            local reagent = "Arcane Powder"
+            if GetItemCount(reagent) == 0 then
+                DEFAULT_CHAT_FRAME:AddMessage(
+                    string.format("|cffff9933BuffPower:|r Missing reagent: %s.", reagent)
+                )
+                return
+            end
+        elseif playerClass == "PRIEST" then
+            local reagent = "Sacred Candle"
+            if GetItemCount(reagent) == 0 then
+                DEFAULT_CHAT_FRAME:AddMessage(
+                    string.format("|cffff9933BuffPower:|r Missing reagent: %s.", reagent)
+                )
+                return
+            end
+        elseif playerClass == "DRUID" then
+            local reagent = "Wild Thornroot"
+            if GetItemCount(reagent) == 0 then
+                DEFAULT_CHAT_FRAME:AddMessage(
+                    string.format("|cffff9933BuffPower:|r Missing reagent: %s.", reagent)
+                )
                 return
             end
         end
-        CastSpellByID(spellIdToCast, castTarget)
+    end
+
+    -- Attempt casting
+    if isGroup then
+        CastSpellByName(buffInfo.group_spell_name)
+    else
+        if not targetName or targetName == "" then
+            DEFAULT_CHAT_FRAME:AddMessage("|cffff9933BuffPower:|r Invalid target for single-target buff.")
+            return
+        end
+        -- Attempt to target the correct unit (may need adjustment for cross-group)
+        -- Use the character name, WoW handles it if in group/raid
+        CastSpellByName(buffInfo.single_spell_name, targetName)
     end
 end
 
@@ -267,6 +319,7 @@ function BuffPower:UpdateOrbAppearance()
 end
 
 function BuffPower:CreateUI()
+    DebugPrint("BuffPower:CreateUI called")
     -- Create the main Frame if it doesn't exist (formerly BuffPowerOrbFrame)
     if not BuffPowerOrbFrame then
         BuffPowerOrbFrame = CreateFrame("Frame", "BuffPowerOrbFrame", UIParent)
@@ -448,6 +501,9 @@ function BuffPower:CreateUI()
                             local classColorHex = (BuffPower.ClassColors and BuffPower.ClassColors[member.class] and BuffPower.ClassColors[member.class].hex) or "|cffffffff"
                             GameTooltip:AddLine(string.format("- %s%s|r", classColorHex, member.name))
                         end
+                        -- UI/UX tip for single buffs (workaround for tooltip interaction limits)
+                        GameTooltip:AddLine(" ", 1,1,1)
+                        GameTooltip:AddLine("|cff9999ffTip:|r Use |cffffff00Left-Click|r for menu, then select a group member to single-buff.", 1,1,1, true)
                     else
                          GameTooltip:AddLine(L["No members in this group (or not in a group)."] or "No members in group.")
                     end
@@ -474,6 +530,7 @@ function BuffPower:CreateUI()
 end
 
 function BuffPower:PositionGroupButtons()
+    DebugPrint("BuffPower:PositionGroupButtons called")
     if not BuffPowerOrbFrame or not BuffPowerOrbFrame:IsVisible() or not BuffPowerOrbFrame.container then
         for _, btn in pairs(BuffPowerGroupButtons) do if btn then btn:Hide() end end
         return
@@ -642,6 +699,7 @@ function BuffPower:UpdateGroupButtonContent(button, groupId)
 end
 
 function BuffPower:UpdateUI()
+    DebugPrint("BuffPower:UpdateUI called. showWindow:", tostring(BuffPowerDB and BuffPowerDB.showWindow))
     if not BuffPowerDB then return end
     if BuffPowerDB.showWindow then
         if not BuffPowerOrbFrame then self:CreateUI()
@@ -679,6 +737,20 @@ function BuffPower:OpenAssignmentMenu(groupId, anchorFrame)
             end
         end
     end
+    -- Add group members for single-target buffing
+    local groupMembers = BuffPower:GetGroupMembers(groupId)
+    if #groupMembers > 0 then
+        table.insert(menuList, { text = "-----", notCheckable=true, disabled=true })
+        table.insert(menuList, { text = L["Buff Single Member"] or "Buff Single Member", isTitle = true, notCheckable = true, disabled = true })
+        for _, member in ipairs(groupMembers) do
+            local classColorHex = (BuffPower.ClassColors and BuffPower.ClassColors[member.class] and BuffPower.ClassColors[member.class].hex) or "|cffffffff"
+            table.insert(menuList, {
+                text = string.format("%s%s|r", classColorHex, member.name),
+                func = function() BuffPower:CastBuff(groupId, member.name) end,
+                notCheckable = true
+            })
+        end
+    end
     EasyMenu(menuList, assignmentMenu, anchorFrame, 0, 0, "MENU")
 end
 
@@ -692,6 +764,10 @@ function BuffPower:OnInitialize()
     -- AceDB initialization
     self.db = LibStub("AceDB-3.0"):New("BuffPowerDB", BuffPower.defaults, true)
     BuffPowerDB = self.db.profile -- Make DB readily accessible
+
+    -- Force window to show for debugging
+    BuffPowerDB.showWindow = true
+    DebugPrint("BuffPower:OnInitialize - Forcing showWindow = true")
 
     if not BuffPowerDB.orbPosition then BuffPowerDB.orbPosition = { a1 = "CENTER", a2 = "CENTER", x = 0, y = 0 } end
     
