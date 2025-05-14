@@ -48,8 +48,8 @@ local BuffPowerGroupMemberFrame -- Will be managed in CreateUI and group button 
 local function BuffPower_ShowGroupMemberFrame(anchorButton, groupId)
     -- Create the member frame if needed
     if not BuffPowerGroupMemberFrame then
-        BuffPowerGroupMemberFrame = CreateFrame("Frame", "BuffPowerGroupMemberFrame", UIParent, BackdropTemplateMixin and "BackdropTemplate")
-        BuffPowerGroupMemberFrame:SetFrameStrata("TOOLTIP")
+        BuffPowerGroupMemberFrame = CreateFrame("Frame", "BuffPowerGroupMemberFrame", UIParent, BackdropTemplateMixin and "BackdropTemplate") -- UIParent as parent
+        BuffPowerGroupMemberFrame:SetFrameStrata("HIGH") -- Ensure it's above most things
         BuffPowerGroupMemberFrame:SetBackdrop({
             bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
             edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -58,29 +58,60 @@ local function BuffPower_ShowGroupMemberFrame(anchorButton, groupId)
         })
         BuffPowerGroupMemberFrame:SetBackdropColor(0,0,0,0.9)
         BuffPowerGroupMemberFrame:SetMovable(false)
-
-        -- Hide frame on mouse leave unless mouse hovers child
-        BuffPowerGroupMemberFrame:SetScript("OnLeave", function(self)
-            self:Hide()
-        end)
     end
+
+    -- Always update parent and ensure proper mouseover logic
+    BuffPowerGroupMemberFrame:SetParent(anchorButton) -- Set parent dynamically
+    BuffPowerGroupMemberFrame:EnableMouse(true)
+    BuffPowerGroupMemberFrame:SetScript("OnEnter", function(self)
+        -- If mouse enters the member frame, do nothing to prevent immediate hiding
+    end)
+    BuffPowerGroupMemberFrame:SetScript("OnLeave", function(self)
+        -- anchorButton is the groupButton that opened this frame.
+        local parentButton = self:GetParent() -- Get current parent
+        C_Timer.After(0.1, function() -- Slightly shorter timer, more responsive
+            if self:IsShown() then
+                if not self:IsMouseOver() and not (parentButton and parentButton:IsMouseOver()) then
+                    self:Hide()
+                end
+            end
+        end)
+    end)
+    -- GroupButton's OnEnter/OnLeave are set once in CreateUI, NOT here.
 
     -- Remove old member buttons
     if BuffPowerGroupMemberFrame.buttons then
         for _, btn in ipairs(BuffPowerGroupMemberFrame.buttons) do btn:Hide() btn:SetParent(nil) end
     end
+    BuffPowerGroupMemberFrame:SetFrameStrata("DIALOG")
     BuffPowerGroupMemberFrame.buttons = {}
 
     local members = BuffPower:GetGroupMembers(groupId)
-    local buttonHeight, buttonWidth, verticalSpacing = 22, 120, 1
+    -- Make member cells same size as group cells
+    local buttonHeight, buttonWidth, verticalSpacing = 28, 80, 2
     local yOffset = -8
     local _, playerClass = UnitClass("player")
     local buffInfo = BuffPower.ClassBuffInfo and BuffPower.ClassBuffInfo[playerClass]
     for idx, member in ipairs(members) do
         local btn = CreateFrame("Button", "BuffPowerGroupMemberButton"..idx, BuffPowerGroupMemberFrame, "SecureActionButtonTemplate")
+        btn:RegisterForClicks("AnyUp")
         btn:SetSize(buttonWidth, buttonHeight)
         btn:SetPoint("TOPLEFT", 8, yOffset)
         yOffset = yOffset - (buttonHeight + verticalSpacing)
+
+        -- Add a border frame with slight rounding (using tooltip border, edgeSize 12 for more roundness)
+        btn.border = CreateFrame("Frame", nil, btn, BackdropTemplateMixin and "BackdropTemplate")
+        btn.border:SetPoint("TOPLEFT", btn, "TOPLEFT", -1, 1)
+        btn.border:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 1, -1)
+        local borderBackdropInfo = {
+            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            edgeSize = 12,
+            insets = {left = 2, right = 2, top = 2, bottom = 2}
+        }
+        if btn.border.SetBackdrop then
+            btn.border:SetBackdrop(borderBackdropInfo)
+            btn.border:SetBackdropBorderColor(0.6, 0.6, 0.6, 0.8)
+        end
 
         local classColorHex = (BuffPower.ClassColors and BuffPower.ClassColors[member.class] and BuffPower.ClassColors[member.class].hex) or "|cffffffff"
         local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -122,18 +153,29 @@ local function BuffPower_ShowGroupMemberFrame(anchorButton, groupId)
             else
                 btn:SetAttribute("unit", member.name)
             end
-            btn.tooltip = (needsBuff and "|cffff3333Needs buff! " or "|cff33ff33Buffed. ") .. "Click to buff "..member.name.." with "..buffInfo.single_spell_name
+            -- Right click = secure group buff for that member's group
+            btn:SetAttribute("type2", "macro")
+            local groupBuffMacro
+            if member.unitid and not UnitIsDeadOrGhost(member.unitid) and member.name ~= UnitName("player") then
+                groupBuffMacro = "/targetexact "..member.name.."\n/cast "..buffInfo.group_spell_name.."\n/targetlasttarget"
+            else
+                groupBuffMacro = "/cast "..buffInfo.group_spell_name
+            end
+            btn:SetAttribute("macrotext2", groupBuffMacro)
+            btn.tooltip = (needsBuff and "|cffff3333Needs buff! " or "|cff33ff33Buffed. ") .. "Click to buff "..member.name.." with "..buffInfo.single_spell_name..".\nRight-click for a group buff."
         else
             btn.tooltip = "Cannot find buff for class "..tostring(playerClass)
             btn:SetAttribute("type", nil)
             btn:SetAttribute("spell", nil)
             btn:SetAttribute("unit", nil)
+            btn:SetAttribute("type2", nil)
+            btn:SetAttribute("macrotext2", nil)
         end
 
         -- No mouseover logic is needed for member buttons
 
         btn:Show()
-        btn:RegisterForClicks("AnyUp")
+        -- btn:RegisterForClicks("AnyUp") -- Redundant, already registered at line 90
         -- Add a simple highlight
         btn.bg = btn:CreateTexture(nil, "BACKGROUND")
         btn.bg:SetAllPoints()
@@ -210,6 +252,19 @@ local function BuffPower_ShowGroupMemberFrame(anchorButton, groupId)
 
         btn:SetScript("PostClick", function(selfB)
             if selfB.anim then selfB.anim:Play() end
+        end)
+
+        -- Click: single buff, Right click: group buff (secure, Classic-legal)
+        btn:SetScript("OnClick", function(selfB, button)
+            -- The SecureActionButtonTemplate will handle 'type' for LeftButton
+            -- and 'type2' for RightButton based on their attributes.
+            -- No need to call SecureActionButton_OnClick from here if relying on direct attribute handling.
+            -- PostClick script handles animation.
+            if button == "RightButton" then
+                -- Action is handled by type2="macro" attribute.
+            else -- LeftButton
+                -- Action is handled by type="spell" attribute.
+            end
         end)
 
         BuffPowerGroupMemberFrame.buttons[#BuffPowerGroupMemberFrame.buttons+1] = btn
@@ -570,8 +625,8 @@ function BuffPower:CreateUI()
         local backdropInfo = {
             bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
             edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-            tile = true, tileSize = 32, edgeSize = 16,
-            insets = { left = 5, right = 5, top = 5, bottom = 5 }
+            tile = true, tileSize = 32, edgeSize = 8, -- Thinner edge
+            insets = { left = 4, right = 4, top = 4, bottom = 4 } -- Smaller insets
         }
         if BuffPowerOrbFrame.SetBackdrop then
             BuffPowerOrbFrame:SetBackdrop(backdropInfo)
@@ -580,7 +635,7 @@ function BuffPower:CreateUI()
         
         -- Add a title text at the top of the frame
         BuffPowerOrbFrame.title = BuffPowerOrbFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-        BuffPowerOrbFrame.title:SetPoint("TOP", BuffPowerOrbFrame, "TOP", 0, -8) -- Adjusted for insets
+        BuffPowerOrbFrame.title:SetPoint("TOP", BuffPowerOrbFrame, "TOP", 0, -6) -- Slightly higher
         BuffPowerOrbFrame.title:SetText("BuffPower")
         -- Make the title text support mouse
         BuffPowerOrbFrame.titleBg = BuffPowerOrbFrame:CreateTexture(nil, "BACKGROUND")
@@ -609,7 +664,7 @@ function BuffPower:CreateUI()
 
         -- Create the main container frame for buttons inside the main frame
         BuffPowerOrbFrame.container = CreateFrame("Frame", "BuffPowerContainerFrame", BuffPowerOrbFrame)
-        BuffPowerOrbFrame.container:SetPoint("TOPLEFT", BuffPowerOrbFrame, "TOPLEFT", 8, -28) -- Below title, adjusted for insets
+        BuffPowerOrbFrame.container:SetPoint("TOPLEFT", BuffPowerOrbFrame, "TOPLEFT", 6, -22) -- Tighter padding: 6px left, 22px from top (below title)
         -- Container size will be set by PositionGroupButtons
 
         BuffPowerOrbFrame:SetScript("OnDragStart", function(self)
@@ -687,12 +742,12 @@ function BuffPower:CreateUI()
             groupButton.border:SetPoint("TOPLEFT", groupButton, "TOPLEFT", -1, 1)
             groupButton.border:SetPoint("BOTTOMRIGHT", groupButton, "BOTTOMRIGHT", 1, -1)
             
+            -- Update border for more rounded look (edgeSize 12)
             local borderBackdropInfo = {
                 edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-                edgeSize = 8,
-                insets = {left = 0, right = 0, top = 0, bottom = 0}
+                edgeSize = 12,
+                insets = {left = 2, right = 2, top = 2, bottom = 2}
             }
-            
             if groupButton.border.SetBackdrop then
                 groupButton.border:SetBackdrop(borderBackdropInfo)
                 groupButton.border:SetBackdropBorderColor(0.6, 0.6, 0.6, 0.8)
@@ -719,37 +774,62 @@ function BuffPower:CreateUI()
             local _, playerClass = UnitClass("player")
             local buffInfo = BuffPower.ClassBuffInfo and BuffPower.ClassBuffInfo[playerClass]
             if buffInfo then
-                groupButton:SetAttribute("type", "spell")
-                groupButton:SetAttribute("spell", buffInfo.group_spell_name)
-                groupButton:SetAttribute("unit", "player")
-                groupButton.tooltip = "Click to group buff with " .. buffInfo.group_spell_name
+                -- Use macrotext so the click actually targets the group member and then does group buff.
+                local groupMembers = BuffPower:GetGroupMembers(i)
+                local anyMemberName
+                for _, m in ipairs(groupMembers) do
+                    if m.unitid and UnitExists(m.unitid) and not UnitIsDeadOrGhost(m.unitid) and m.name then
+                        anyMemberName = m.name
+                        break
+                    end
+                end
+                local macro
+                if anyMemberName and anyMemberName ~= UnitName("player") then
+                    macro = "/targetexact "..anyMemberName.."\n/cast "..buffInfo.group_spell_name.."\n/targetlasttarget"
+                else
+                    macro = "/cast "..buffInfo.group_spell_name
+                end
+                groupButton:RegisterForClicks("AnyUp")
+                -- Left-click is now purely for toggling member frame, not a secure action itself.
+                -- Right-click will use type2/macrotext2 for the group buff.
+                groupButton:SetAttribute("type2", "macro")
+                groupButton:SetAttribute("macrotext2", macro)
+                groupButton.tooltip = "Left-click to show members. Right-click to group buff group " .. i .. " using " .. buffInfo.group_spell_name
+                -- Mouseover shows popout, left click buffs
+                groupButton:SetScript("OnClick", nil) -- Clear existing OnClick before setting new one
+                groupButton:SetScript("OnEnter", function(self_button)
+                    -- if BuffPowerGroupMemberFrame and BuffPowerGroupMemberFrame:IsShown() then BuffPowerGroupMemberFrame:Hide() end -- Not needed, can cause flicker
+                    BuffPower_ShowGroupMemberFrame(self_button, self_button.groupID)
+                end)
+                groupButton:SetScript("OnLeave", function(self_button)
+                    C_Timer.After(0.15, function() -- Timer to check before hiding
+                        if BuffPowerGroupMemberFrame and BuffPowerGroupMemberFrame:IsShown() then
+                            if not self_button:IsMouseOver() and not BuffPowerGroupMemberFrame:IsMouseOver() then
+                                BuffPowerGroupMemberFrame:Hide()
+                            end
+                        end
+                    end)
+                end)
             else
                 groupButton.tooltip = "Your class cannot group buff."
             end
-            groupButton:SetScript("OnEnter", function(selfB)
-                if selfB.tooltip then
-                    GameTooltip:SetOwner(selfB, "ANCHOR_RIGHT")
-                    GameTooltip:SetText(selfB.tooltip)
-                    GameTooltip:Show()
+            -- No on-hover tooltip; removed "Click to group buff" mouseover
+            
+            groupButton:SetScript("OnClick", function(self_button, mouseButton)
+                if mouseButton == "RightButton" then
+                    -- The SecureActionButtonTemplate handles right-click via "type2" and "macrotext2"
+                    -- Play animation if it exists.
+                    if self_button.anim then self_button.anim:Play() end
+                else -- LeftButton
+                    -- Show/hide member popout on left click
+                    if BuffPowerGroupMemberFrame and BuffPowerGroupMemberFrame:IsShown() and BuffPowerGroupMemberFrame:GetParent() == self_button then
+                        BuffPowerGroupMemberFrame:Hide()
+                    else
+                        BuffPower_ShowGroupMemberFrame(self_button, self_button.groupID)
+                    end
                 end
             end)
-            groupButton:SetScript("OnLeave", function(selfB) GameTooltip:Hide() end)
-            
-            groupButton:SetScript("OnEnter", function(self_button)
-                -- Hide tooltip and show the interactive member frame instead
-                if BuffPowerGroupMemberFrame and BuffPowerGroupMemberFrame:IsShown() then BuffPowerGroupMemberFrame:Hide() end
-                BuffPower_ShowGroupMemberFrame(self_button, self_button.groupID)
-            end)
-
-            groupButton:SetScript("OnLeave", function(self_button)
-                -- Hide frame after short delay if the mouse truly left all related widgets
-                C_Timer.After(0.1, function()
-                    if (not MouseIsOver(self_button)) and (not (BuffPowerGroupMemberFrame and MouseIsOver(BuffPowerGroupMemberFrame))) then
-                        if BuffPowerGroupMemberFrame then BuffPowerGroupMemberFrame:Hide() end
-                    end
-                end)
-            end)
-            -- Also ensure member frame hides itself properly on mouseleave (already set above)
+            -- Also ensure member frame hides itself properly on mouseleave (handled by its own OnLeave)
             groupButton:Hide() -- Initially hide
             BuffPowerGroupButtons[i] = groupButton
         end
@@ -867,14 +947,14 @@ function BuffPower:PositionGroupButtons()
     BuffPowerOrbFrame.container:SetSize(containerWidth, containerHeight)
     
     -- Resize main frame (BuffPowerOrbFrame) to fit container plus its own padding/title
-    -- Main frame's SetPoint for container: TOPLEFT, 8, -28
-    local mainFramePaddingX = 8 -- Left padding for container
-    local mainFramePaddingTitle = 28 -- Top padding for container (includes title area)
-    local mainFramePaddingBottom = 8 -- Bottom padding for main frame
-    local mainFramePaddingRight = 8 -- Right padding for main frame
-
-    local totalWidth = containerWidth + mainFramePaddingX + mainFramePaddingRight
-    local totalHeight = containerHeight + mainFramePaddingTitle + mainFramePaddingBottom
+    -- These values define the padding *around* the container, within the BuffPowerOrbFrame
+    local containerOffsetX_forMainFrame = 6  -- As set for BuffPowerOrbFrame.container TOPLEFT x
+    local titleAreaHeight_forMainFrame = 22 -- As set for BuffPowerOrbFrame.container TOPLEFT y (absolute)
+    local mainFramePaddingRightOfContainer = 6 -- Desired space to the right of the container
+    local mainFramePaddingBottomOfContainer = 6 -- Desired space below the container
+    
+    local totalWidth = containerOffsetX_forMainFrame + containerWidth + mainFramePaddingRightOfContainer
+    local totalHeight = titleAreaHeight_forMainFrame + containerHeight + mainFramePaddingBottomOfContainer
     
     BuffPowerOrbFrame:SetSize(totalWidth, totalHeight)
 
