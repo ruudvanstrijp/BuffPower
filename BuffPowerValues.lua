@@ -40,6 +40,10 @@ BuffPower.ClassIcons = {
     ["DRUID"]  = "Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES_DRUID",
 }
 
+-- General UI layout constants (used in profile/layout defaults)
+BuffPower.BUTTON_RADIUS_DEFAULT = 70   -- Default distance of group buttons from the orb
+BuffPower.BUTTON_ANGLE_OFFSET_DEFAULT = -90 -- Start buttons at the top (-90 degrees)
+
 -- 2. Buff Definitions
 -- NOTE: Replace SPELL_ID_X with actual Spell IDs and icon paths with correct ones.
 BuffPower.MageBuffs = {

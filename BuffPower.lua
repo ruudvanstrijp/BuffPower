@@ -17,6 +17,7 @@ if _G.BuffPower then
     for k, v in pairs(_G.BuffPower) do BuffPower[k] = v end
 end
 _G.BuffPower = BuffPower
+BuffPower.debug = false  -- Set true for verbose debug messages in development.
 
 -- Get Locale table *after* NewAddon, similar to PallyPower
 local L = LibStub("AceLocale-3.0"):GetLocale(addonName) 
@@ -25,17 +26,32 @@ local L = LibStub("AceLocale-3.0"):GetLocale(addonName)
 local MAX_RAID_MEMBERS = 40
 local MAX_PARTY_MEMBERS = 5
 local MAX_RAID_GROUPS = 8
-local ORB_SIZE = 15 -- Size of the central draggable orb
-local BUTTON_RADIUS_DEFAULT = 70 -- Default distance of group buttons from the orb
-local BUTTON_ANGLE_OFFSET_DEFAULT = -90 -- Start buttons at the top (-90 degrees)
 
--- Icon Paths (assuming they are in BuffPower/Icons/ folder)
-local ICON_PATH_ORB_UNLOCKED = "Interface\\AddOns\\BuffPower\\Icons\\draghandle.tga"
-local ICON_PATH_ORB_LOCKED = "Interface\\AddOns\\BuffPower\\Icons\\draghandle-checked.tga"
--- local ICON_PATH_RESIZE_GRIP = "Interface\\AddOns\\BuffPower\\Icons\\ResizeGrip.tga" -- For future use if resizing is added
+-- Helper to check for presence of a buff by name or spellId on a unit
+local function HasBuff(unit, spellNameOrId)
+    if not unit or not spellNameOrId then return false end
+    local i = 1
+    while true do
+        local name, _, _, _, _, _, _, _, _, spellId = UnitAura(unit, i, "HELPFUL")
+        if not name then break end
+        if spellNameOrId == name or spellNameOrId == spellId then
+            return true
+        end
+        i = i + 1
+    end
+    return false
+end
 
--- Ace3 Stubs
-local LibStub = _G.LibStub
+-- Returns true if the unit has either the single or group buff for given class
+function BuffPower:GetUnitBuffState(unitId, class)
+    if not BuffPower.ClassBuffInfo or not class then return false end
+    local buffInfo = BuffPower.ClassBuffInfo[class]
+    if not buffInfo then return false end
+    if HasBuff(unitId, buffInfo.single_spell_name) or HasBuff(unitId, buffInfo.group_spell_name) then
+        return true
+    end
+    return false
+end
 
 -- LibUIDropDownMenu compatibility
 local L_UIDropDown = LibStub and LibStub("LibUIDropDownMenu-4.0", true)
@@ -45,8 +61,9 @@ local BuffPowerOrbFrame -- The central draggable orb
 local BuffPowerGroupButtons = {} -- Array to hold the group button frames
 -- Main group member popout frame (created on demand)
 local BuffPowerGroupMemberFrame -- Will be managed in CreateUI and group button handlers
-local function BuffPower_ShowGroupMemberFrame(anchorButton, groupId)
-    -- Create the member frame if needed
+
+-- Helper: Ensures frame exists, resets properties
+local function CreateOrResetGroupMemberFrame()
     if not BuffPowerGroupMemberFrame then
         BuffPowerGroupMemberFrame = CreateFrame("Frame", "BuffPowerGroupMemberFrame", UIParent, BackdropTemplateMixin and "BackdropTemplate")
         BuffPowerGroupMemberFrame:SetFrameStrata("TOOLTIP")
@@ -58,168 +75,98 @@ local function BuffPower_ShowGroupMemberFrame(anchorButton, groupId)
         })
         BuffPowerGroupMemberFrame:SetBackdropColor(0,0,0,0.9)
         BuffPowerGroupMemberFrame:SetMovable(false)
-
-        -- Hide frame on mouse leave unless mouse hovers child
         BuffPowerGroupMemberFrame:SetScript("OnLeave", function(self)
             self:Hide()
         end)
     end
-
-    -- Remove old member buttons
+    -- Remove old member buttons if present
     if BuffPowerGroupMemberFrame.buttons then
         for _, btn in ipairs(BuffPowerGroupMemberFrame.buttons) do btn:Hide() btn:SetParent(nil) end
     end
     BuffPowerGroupMemberFrame.buttons = {}
+end
 
-    local members = BuffPower:GetGroupMembers(groupId)
-    local buttonHeight, buttonWidth, verticalSpacing = 22, 120, 1 -- Member cell size (keep in sync with group cell)
+-- Helper: Update all per-button visual/logic; called by Populator and by ticker
+local function UpdateMemberButtonAppearance(btn, member, buffInfo, playerClass)
+    local classColorHex = (BuffPower.ClassColors and BuffPower.ClassColors[member.class] and BuffPower.ClassColors[member.class].hex) or "|cffffffff"
+    local needsBuff = true
+    if buffInfo and member.unitid then
+        needsBuff = not BuffPower:GetUnitBuffState(member.unitid, playerClass)
+    end
+    local color
+    if needsBuff then
+        color = { r = 1, g = 0.2, b = 0.2 }
+    else
+        color = { r = 0.2, g = 1, b = 0.2 }
+    end
+    if not btn.label then
+        btn.label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        btn.label:SetPoint("LEFT", btn, "LEFT", 8, 0)
+    end
+    btn.label:SetText(classColorHex..member.name.."|r")
+    btn.label:SetTextColor(color.r, color.g, color.b)
+    -- Background
+    if not btn.bg then
+        btn.bg = btn:CreateTexture(nil, "BACKGROUND")
+        btn.bg:SetAllPoints()
+    end
+    if needsBuff then
+        btn.bg:SetColorTexture(1, 0.2, 0.2, 0.5)
+    else
+        btn.bg:SetColorTexture(0.2, 1, 0.2, 0.5)
+    end
+    -- Tooltip/secure
+    if buffInfo then
+        btn:SetAttribute("type", "spell")
+        btn:SetAttribute("spell", buffInfo.single_spell_name)
+        if member.unitid then
+            btn:SetAttribute("unit", member.unitid)
+        else
+            btn:SetAttribute("unit", member.name)
+        end
+        btn.tooltip = (needsBuff and "|cffff3333Needs buff! " or "|cff33ff33Buffed. ") .. "Click to buff "..member.name.." with "..buffInfo.single_spell_name
+    else
+        btn.tooltip = "Cannot find buff for class "..tostring(playerClass)
+        btn:SetAttribute("type", nil)
+        btn:SetAttribute("spell", nil)
+        btn:SetAttribute("unit", nil)
+    end
+end
+
+-- Helper: Populates/reset all member buttons
+local function PopulateGroupMemberButtons(groupId, members, buffInfo, playerClass)
+    local buttonHeight, buttonWidth, verticalSpacing = 22, 120, 1
     local yOffset = -8
-    local _, playerClass = UnitClass("player")
-    local buffInfo = BuffPower.ClassBuffInfo and BuffPower.ClassBuffInfo[playerClass]
     for idx, member in ipairs(members) do
         local btn = CreateFrame("Button", "BuffPowerGroupMemberButton"..idx, BuffPowerGroupMemberFrame, "SecureActionButtonTemplate")
         btn:SetSize(buttonWidth, buttonHeight)
         btn:SetPoint("TOPLEFT", 8, yOffset)
         yOffset = yOffset - (buttonHeight + verticalSpacing)
-
-        local classColorHex = (BuffPower.ClassColors and BuffPower.ClassColors[member.class] and BuffPower.ClassColors[member.class].hex) or "|cffffffff"
-        local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        label:SetPoint("LEFT", btn, "LEFT", 8, 0)
-        -- Buff detection logic:
-        local needsBuff = true
-        if buffInfo and member.unitid then
-            -- Classic API: UnitAura(unit, index, "HELPFUL")
-            local i = 1
-            while true do
-                local bname = UnitAura(member.unitid, i, "HELPFUL")
-                if not bname then break end
-                print("BuffPower DEBUG: Found buff on", member.name, ":", bname, "Looking for:", buffInfo.single_spell_name, "or", buffInfo.group_spell_name)
-                if bname == buffInfo.single_spell_name or bname == buffInfo.group_spell_name then
-                    print("BuffPower DEBUG: Buff match for", member.name, ":", bname)
-                    needsBuff = false
-                    break
-                end
-                i = i + 1
-            end
-        end
-
-        -- Color: gray-red if needs buff, white-green if buffed
-        local color
-        if needsBuff then
-            color = { r = 1, g = 0.2, b = 0.2 } -- reddish
-        else
-            color = { r = 0.2, g = 1, b = 0.2 } -- green
-        end
-
-        label:SetText(classColorHex..member.name.."|r")
-        label:SetTextColor(color.r, color.g, color.b)
-        btn.label = label
-
-        -- Secure attributes for real spell cast!
-        if buffInfo then
-            btn:SetAttribute("type", "spell")
-            btn:SetAttribute("spell", buffInfo.single_spell_name)
-            if member.unitid then
-                btn:SetAttribute("unit", member.unitid)
-            else
-                btn:SetAttribute("unit", member.name)
-            end
-            btn.tooltip = (needsBuff and "|cffff3333Needs buff! " or "|cff33ff33Buffed. ") .. "Click to buff "..member.name.." with "..buffInfo.single_spell_name
-        else
-            btn.tooltip = "Cannot find buff for class "..tostring(playerClass)
-            btn:SetAttribute("type", nil)
-            btn:SetAttribute("spell", nil)
-            btn:SetAttribute("unit", nil)
-        end
-
-        -- No mouseover logic is needed for member buttons
-
+        UpdateMemberButtonAppearance(btn, member, buffInfo, playerClass)
         btn:Show()
         btn:RegisterForClicks("AnyUp")
-        -- Add a simple highlight
-        btn.bg = btn:CreateTexture(nil, "BACKGROUND")
-        btn.bg:SetAllPoints()
-        -- Instead of gray, green or red based on buff state:
-        if needsBuff then
-            btn.bg:SetColorTexture(1, 0.2, 0.2, 0.5)  -- reddish
-        else
-            btn.bg:SetColorTexture(0.2, 1, 0.2, 0.5)  -- greenish
-            -- Set up periodic updates to keep the backgrounds live while visible
-            if not BuffPowerGroupMemberFrame.UpdateBackdrop then
-                function BuffPowerGroupMemberFrame:UpdateBackdrop()
-                    if not self:IsShown() or not self.lastGroupId then return end
-                    local members = BuffPower:GetGroupMembers(self.lastGroupId)
-                    local _, playerClass = UnitClass("player")
-                    local buffInfo = BuffPower.ClassBuffInfo and BuffPower.ClassBuffInfo[playerClass]
-                    for idx, member in ipairs(members) do
-                        local btn = self.buttons[idx]
-                        if btn and btn.bg then
-                            local needsBuff = true
-                            if buffInfo and member.unitid then
-                                local i = 1
-                                while true do
-                                    local bname = UnitAura(member.unitid, i, "HELPFUL")
-                                    if not bname then break end
-                                    if bname == buffInfo.single_spell_name or bname == buffInfo.group_spell_name then
-                                        needsBuff = false
-                                        break
-                                    end
-                                    i = i + 1
-                                end
-                            end
-                            if needsBuff then
-                                btn.bg:SetColorTexture(1, 0.2, 0.2, 0.5)
-                            else
-                                btn.bg:SetColorTexture(0.2, 1, 0.2, 0.5)
-                            end
-                        end
-                    end
-                end
-            end
-        
-            BuffPowerGroupMemberFrame.lastGroupId = groupId
-            -- Start or restart the ticker every time the frame is shown
-            if BuffPowerGroupMemberFrame.updateTicker then
-                BuffPowerGroupMemberFrame.updateTicker:Cancel()
-                BuffPowerGroupMemberFrame.updateTicker = nil
-            end
-            BuffPowerGroupMemberFrame.updateTicker = C_Timer.NewTicker(0.5, function()
-                if BuffPowerGroupMemberFrame:IsShown() and BuffPowerGroupMemberFrame.lastGroupId then
-                    BuffPowerGroupMemberFrame:UpdateBackdrop()
-                end
-            end)
-        
-            -- Also stop the ticker when the frame is hidden
-            if not BuffPowerGroupMemberFrame._tickerHooked then
-                BuffPowerGroupMemberFrame._tickerHooked = true
-                BuffPowerGroupMemberFrame:HookScript("OnHide", function(self)
-                    if self.updateTicker then self.updateTicker:Cancel(); self.updateTicker = nil end
-                end)
-            end
+        -- Feedback animation group
+        if not btn.anim then
+            btn.anim = btn:CreateAnimationGroup()
+            btn.anim.fade = btn.anim:CreateAnimation("Alpha")
+            btn.anim.fade:SetFromAlpha(1)
+            btn.anim.fade:SetToAlpha(0.5)
+            btn.anim.fade:SetDuration(0.08)
+            btn.anim.fade:SetOrder(1)
+            btn.anim.fade2 = btn.anim:CreateAnimation("Alpha")
+            btn.anim.fade2:SetFromAlpha(0.5)
+            btn.anim.fade2:SetToAlpha(1)
+            btn.anim.fade2:SetDuration(0.16)
+            btn.anim.fade2:SetOrder(2)
         end
-        -- Feedback animation on click: quick border flash
-        btn.anim = btn:CreateAnimationGroup()
-        btn.anim.fade = btn.anim:CreateAnimation("Alpha")
-        btn.anim.fade:SetFromAlpha(1)
-        btn.anim.fade:SetToAlpha(0.5)
-        btn.anim.fade:SetDuration(0.08)
-        btn.anim.fade:SetOrder(1)
-        btn.anim.fade2 = btn.anim:CreateAnimation("Alpha")
-        btn.anim.fade2:SetFromAlpha(0.5)
-        btn.anim.fade2:SetToAlpha(1)
-        btn.anim.fade2:SetDuration(0.16)
-        btn.anim.fade2:SetOrder(2)
-
         btn:SetScript("PostClick", function(selfB)
             if selfB.anim then selfB.anim:Play() end
-            -- Always refresh the full roster after a single buff, like PallyPower
             C_Timer.After(0.6, function()
                 if BuffPower and BuffPower.UpdateRoster then
                     BuffPower:UpdateRoster()
                 end
             end)
-    
-            -- After buffing, if the member popout is open, just refresh its backgrounds (no flicker)
+            -- Refresh live backgrounds if open
             if BuffPowerGroupMemberFrame and BuffPowerGroupMemberFrame:IsShown() and BuffPowerGroupMemberFrame.UpdateBackdrop then
                 C_Timer.After(0.7, function()
                     if BuffPowerGroupMemberFrame and BuffPowerGroupMemberFrame:IsShown() then
@@ -228,18 +175,78 @@ local function BuffPower_ShowGroupMemberFrame(anchorButton, groupId)
                 end)
             end
         end)
-
         BuffPowerGroupMemberFrame.buttons[#BuffPowerGroupMemberFrame.buttons+1] = btn
     end
+    -- Setup live background updating just like before
+    if not BuffPowerGroupMemberFrame.UpdateBackdrop then
+        function BuffPowerGroupMemberFrame:UpdateBackdrop()
+            if not self:IsShown() or not self.lastGroupId then return end
+            local updateMembers = BuffPower:GetGroupMembers(self.lastGroupId)
+            local _, playerClass = UnitClass("player")
+            local buffInfo = BuffPower.ClassBuffInfo and BuffPower.ClassBuffInfo[playerClass]
+            for idx, member in ipairs(updateMembers) do
+                local btn = self.buttons[idx]
+                if btn then
+                    UpdateMemberButtonAppearance(btn, member, buffInfo, playerClass)
+                end
+            end
+        end
+    end
+    -- Start or restart ticker
+    BuffPowerGroupMemberFrame.lastGroupId = groupId
+    if BuffPowerGroupMemberFrame.updateTicker then
+        BuffPowerGroupMemberFrame.updateTicker:Cancel()
+        BuffPowerGroupMemberFrame.updateTicker = nil
+    end
+    BuffPowerGroupMemberFrame.updateTicker = C_Timer.NewTicker(0.5, function()
+        if BuffPowerGroupMemberFrame:IsShown() and BuffPowerGroupMemberFrame.lastGroupId then
+            BuffPowerGroupMemberFrame:UpdateBackdrop()
+        end
+    end)
+    -- Hook ticker stop on hide
+    if not BuffPowerGroupMemberFrame._tickerHooked then
+        BuffPowerGroupMemberFrame._tickerHooked = true
+        BuffPowerGroupMemberFrame:HookScript("OnHide", function(self)
+            if self.updateTicker then self.updateTicker:Cancel(); self.updateTicker = nil end
+        end)
+    end
+end
 
-    -- Set frame size based on members
+-- Main: Show and fill the group member frame
+local function BuffPower_ShowGroupMemberFrame(anchorButton, groupId)
+    CreateOrResetGroupMemberFrame()
+    local members = BuffPower:GetGroupMembers(groupId)
+    local _, playerClass = UnitClass("player")
+    local buffInfo = BuffPower.ClassBuffInfo and BuffPower.ClassBuffInfo[playerClass]
+    PopulateGroupMemberButtons(groupId, members, buffInfo, playerClass)
+    -- Set frame size
+    local buttonHeight, verticalSpacing = 22, 1
     local h = (#members > 0 and (#members * (buttonHeight + verticalSpacing) + 16)) or 20
-    BuffPowerGroupMemberFrame:SetSize(buttonWidth + 16, h)
-
+    BuffPowerGroupMemberFrame:SetSize(120 + 16, h)
     -- Position the frame to the right of the anchor button
-    local x, y = anchorButton:GetRight(), select(2, anchorButton:GetCenter())
     BuffPowerGroupMemberFrame:SetPoint("LEFT", anchorButton, "RIGHT", 8, 0)
     BuffPowerGroupMemberFrame:Show()
+    -- Register UNIT_AURA event for live update only when frame is shown
+    if not BuffPowerGroupMemberFrame._unitAuraRegistered then
+        BuffPowerGroupMemberFrame._unitAuraRegistered = true
+        BuffPowerGroupMemberFrame:SetScript("OnShow", function(self)
+            if not self._eventFrame then
+                self._eventFrame = CreateFrame("Frame")
+            end
+            self._eventFrame:RegisterEvent("UNIT_AURA")
+            self._eventFrame:SetScript("OnEvent", function(_, event, unit)
+                if event == "UNIT_AURA" and BuffPowerGroupMemberFrame:IsShown() then
+                    BuffPowerGroupMemberFrame:UpdateBackdrop()
+                end
+            end)
+        end)
+        BuffPowerGroupMemberFrame:SetScript("OnHide", function(self)
+            if self._eventFrame then
+                self._eventFrame:UnregisterEvent("UNIT_AURA")
+            end
+            if self.updateTicker then self.updateTicker:Cancel(); self.updateTicker = nil end
+        end)
+    end
 end
 
 -- Default Database Structure
@@ -251,6 +258,7 @@ BuffPower.optionsPanelName = "BuffPower" -- Add this line to set the correct opt
 
 -- Helper function for debugging (modified to always print)
 local function DebugPrint(...)
+    if not BuffPower.debug then return end
     local args = {...}
     local t = {}
     for i = 1, #args do
@@ -1045,8 +1053,8 @@ function BuffPower:OnInitialize()
     -- Update layout defaults
     if not BuffPowerDB.layout then
         BuffPowerDB.layout = {
-            radius = BUTTON_RADIUS_DEFAULT, -- Old setting, can be phased out
-            start_angle_offset_degrees = BUTTON_ANGLE_OFFSET_DEFAULT, -- Old setting
+            radius = BuffPower.BUTTON_RADIUS_DEFAULT, -- Old setting, can be phased out
+            start_angle_offset_degrees = BuffPower.BUTTON_ANGLE_OFFSET_DEFAULT, -- Old setting
             -- New settings for list layout
             buttonWidth = 180,
             buttonHeight = 25,
@@ -1220,7 +1228,7 @@ function BuffPower:ChatCommand(input)
         if BuffPower.defaults and BuffPower.deepcopy then
             local defaultProfile = BuffPower.deepcopy(BuffPower.defaults.profile)
             if not defaultProfile.orbPosition then defaultProfile.orbPosition = { a1 = "CENTER", a2 = "CENTER", x = 0, y = 0 } end
-            if not defaultProfile.layout then defaultProfile.layout = { radius = BUTTON_RADIUS_DEFAULT, start_angle_offset_degrees = BUTTON_ANGLE_OFFSET_DEFAULT } end
+            if not defaultProfile.layout then defaultProfile.layout = { radius = BuffPower.BUTTON_RADIUS_DEFAULT, start_angle_offset_degrees = BuffPower.BUTTON_ANGLE_OFFSET_DEFAULT } end
             if self.db and self.db.ResetProfile then
                 self.db:ResetProfile()
                 BuffPowerDB = self.db.profile
