@@ -72,6 +72,7 @@ BuffPower.BuffTypes = {
         eligible_target_classes = { "PRIEST", "MAGE", "WARLOCK", "DRUID", "SHAMAN", "HUNTER", "PALADIN" }, -- Not WARRIOR/ROGUE
         is_optional = false,
         requires_talent = true,
+        group_icon = "Interface\\Icons\\Spell_Holy_PrayerOfSpirit",
     },
     SHADOW = {
         name = "Shadow Protection",
@@ -84,6 +85,7 @@ BuffPower.BuffTypes = {
         eligible_target_classes = { "PRIEST", "MAGE", "WARLOCK", "DRUID", "SHAMAN", "HUNTER", "PALADIN", "ROGUE", "WARRIOR" },
         is_optional = true,
         requires_talent = false,
+        group_icon = "Interface\\Icons\\Spell_Holy_PrayerofShadowProtection",
     },
     ARCANE_INTELLECT = {
         name = "Arcane Intellect",

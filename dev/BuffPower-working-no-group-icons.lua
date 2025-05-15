@@ -137,9 +137,11 @@ local BuffPowerGroupMemberFrame -- Will be managed in CreateUI and group button 
 
 -- Helper: Ensures frame exists, resets properties
 -- Helper: Hides all member buttons for group popout (removes container frame entirely)
--- Hides all member buttons. Do NOT force-hide the popout frame itself: popout frame lifetime is governed solely by SecureHandlerEnterLeaveTemplate and RegisterAutoHide.
 local function HideGroupMemberButtons()
-    -- Only reset group id and hide member buttons
+    if BuffPower.MemberPopoutTicker then
+        BuffPower.MemberPopoutTicker:Cancel()
+        BuffPower.MemberPopoutTicker = nil
+    end
     BuffPower.MemberPopoutGroupId = nil
     for i = 1, 40 do
         local btn = _G["BuffPowerGroupMemberButton" .. i]
@@ -148,8 +150,6 @@ local function HideGroupMemberButtons()
             btn:SetParent(UIParent)
         end
     end
-    -- Do not forcibly hide BuffPowerGroupMemberFrame here!
-    -- Do not cancel MemberPopoutTicker here; ticker is handled by the secure attribute lifecycle.
 end
 
 -- Helper: Update all per-button visual/logic; called by Populator and by ticker
@@ -168,19 +168,9 @@ local function UpdateMemberButtonAppearance(btn, member, buffInfo, bufferClass)
 
     -- Find all buffs this bufferClass could cast for this member
     local buffsToCheck = {}
-    if bufferClass == "PRIEST" then
-        local orderedKeys = { "FORTITUDE", "SPIRIT", "SHADOW" }
-        for _, buffKey in ipairs(orderedKeys) do
-            local buff = BuffPower.BuffTypes[buffKey]
-            if buff and BuffPower:NeedsBuffFrom(bufferClass, member.class, buffKey) then
-                table.insert(buffsToCheck, { key = buffKey, info = buff })
-            end
-        end
-    else
-        for buffKey, buff in pairs(BuffPower.BuffTypes or {}) do
-            if BuffPower:NeedsBuffFrom(bufferClass, member.class, buffKey) then
-                table.insert(buffsToCheck, { key = buffKey, info = buff })
-            end
+    for buffKey, buff in pairs(BuffPower.BuffTypes or {}) do
+        if BuffPower:NeedsBuffFrom(bufferClass, member.class, buffKey) then
+            table.insert(buffsToCheck, { key = buffKey, info = buff })
         end
     end
 
@@ -298,23 +288,13 @@ local function UpdateMemberButtonAppearance(btn, member, buffInfo, bufferClass)
     end
 
     -- Show main member label right of final icon
-    -- New layout: name on left, icons right-aligned
     if not btn.label then
         btn.label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     end
-    btn.label:ClearAllPoints()
-    btn.label:SetPoint("LEFT", btn, "LEFT", 6, 0)
-    btn.label:SetJustifyH("LEFT")
+    local nameLabelOffset = ICON_PADDING + iconsDisplayed * (ICON_SIZE + ICON_PADDING)
+    btn.label:SetPoint("LEFT", btn, "LEFT", nameLabelOffset, 0)
     btn.label:SetText(classColorHex..member.name.."|r")
     btn.label:SetTextColor(1,1,1)
-
-    -- Position buff icons flush on right, icons row grows inward from right
-    local totalIconWidth = iconsDisplayed*(ICON_SIZE + ICON_PADDING) - ICON_PADDING
-    for i = iconsDisplayed, 1, -1 do
-        local iconBtn = btn.buffIcons[i]
-        iconBtn:ClearAllPoints()
-        iconBtn:SetPoint("RIGHT", btn, "RIGHT", -((iconsDisplayed - i)*(ICON_SIZE+ICON_PADDING)), 0)
-    end
 
     -- Hide unused icons/buttons
     for i = iconsDisplayed+1, #btn.buffIcons do
@@ -384,41 +364,11 @@ end
 
 -- Helper: Populates/reset all member buttons
 local function PopulateGroupMemberButtons(anchorButton, members, buffInfo, playerClass)
-    -- Ensure popup container exists
-    if not BuffPowerGroupMemberFrame then
-        BuffPowerGroupMemberFrame = CreateFrame("Frame", "BuffPowerGroupMemberFrame", UIParent, "SecureHandlerEnterLeaveTemplate")
-        BuffPowerGroupMemberFrame:SetFrameStrata("DIALOG")
-        BuffPowerGroupMemberFrame:EnableMouse(true)
-        BuffPowerGroupMemberFrame:SetMovable(false)
-        BuffPowerGroupMemberFrame:SetClampedToScreen(true)
-        -- Robust auto-hide after pointer leaves (like PallyPower)
-        BuffPowerGroupMemberFrame:SetAttribute("_onenter", [[self:RegisterAutoHide(0.3)]])
-        BuffPowerGroupMemberFrame:SetAttribute("_onleave", [[self:RegisterAutoHide(0.3)]])
-        BuffPowerGroupMemberFrame:SetAttribute("_onshow", [[self:RegisterAutoHide(0.3)]])
-        -- No manual OnLeave needed
-    end
-    BuffPowerGroupMemberFrame:Show()
-    BuffPowerGroupMemberFrame:ClearAllPoints()
-    -- Anchor to the group button for now—refine if desired
-    BuffPowerGroupMemberFrame:SetPoint("LEFT", anchorButton, "RIGHT", 8, 0)
-
+    -- Show member buttons aligned vertically right of anchorButton (no container)
     local displayConfig = (BuffPower.db and BuffPower.db.profile and BuffPower.db.profile.display) or (BuffPower.defaults and BuffPower.defaults.profile and BuffPower.defaults.profile.display) or {}
-    local buttonWidth = (displayConfig.buttonWidth ~= nil) and displayConfig.buttonWidth or 160
+    local buttonWidth = (displayConfig.buttonWidth ~= nil) and displayConfig.buttonWidth or 120
     local buttonHeight = (displayConfig.buttonHeight ~= nil) and displayConfig.buttonHeight or 28
     local verticalSpacing = (displayConfig.verticalSpacing ~= nil) and displayConfig.verticalSpacing or 1
-
-    local totalButtons = #members
-    local popupWidth = buttonWidth
-    local topPad = 14
-    local bottomPad = 2
-    local popupHeight = topPad + totalButtons * buttonHeight + (totalButtons - 1) * verticalSpacing + bottomPad
-    BuffPowerGroupMemberFrame:SetSize(popupWidth, popupHeight)
-    -- Add invisible background to catch OnLeave between/above/below buttons
-    if not BuffPowerGroupMemberFrame.bg then
-        BuffPowerGroupMemberFrame.bg = BuffPowerGroupMemberFrame:CreateTexture(nil, "BACKGROUND")
-        BuffPowerGroupMemberFrame.bg:SetAllPoints()
-        BuffPowerGroupMemberFrame.bg:SetColorTexture(0,0,0,0)
-    end
 
     -- Hide any old buttons from previous popouts
     for i = #members + 1, 40 do
@@ -426,15 +376,13 @@ local function PopulateGroupMemberButtons(anchorButton, members, buffInfo, playe
         if btn then btn:Hide() end
     end
 
-    -- Layout member buttons in the popup, parented to the container
+    -- Layout member buttons in a vertical stack, anchored to anchorButton (the group button)
     for idx, member in ipairs(members) do
-        local btn = _G["BuffPowerGroupMemberButton" .. idx] or CreateFrame("Button", "BuffPowerGroupMemberButton"..idx, BuffPowerGroupMemberFrame, "SecureActionButtonTemplate")
-        btn:SetParent(BuffPowerGroupMemberFrame)
+        local btn = _G["BuffPowerGroupMemberButton" .. idx] or CreateFrame("Button", "BuffPowerGroupMemberButton"..idx, UIParent, "SecureActionButtonTemplate")
         btn:SetSize(buttonWidth, buttonHeight)
         btn:ClearAllPoints()
-        btn:EnableMouse(true)
         if idx == 1 then
-            btn:SetPoint("TOPLEFT", BuffPowerGroupMemberFrame, "TOPLEFT", 0, -topPad)
+            btn:SetPoint("LEFT", anchorButton, "RIGHT", 8, 0)
         else
             local prevBtn = _G["BuffPowerGroupMemberButton" .. (idx-1)]
             btn:SetPoint("TOPLEFT", prevBtn, "BOTTOMLEFT", 0, -verticalSpacing)
@@ -464,8 +412,6 @@ local function PopulateGroupMemberButtons(anchorButton, members, buffInfo, playe
                 end
             end)
         end)
-        -- Make sure mouse leaving any button triggers a hover check for the popup
-        btn:SetScript("OnLeave", nil)
     end
 end
 
@@ -662,7 +608,6 @@ function BuffPower:UpdateRoster()
     end
     DebugPrint("Roster updated. Members:", #BuffPower.Roster)
     BuffPower:UpdateUI()
-    HideGroupMemberButtons()
 end
 
 function BuffPower:IsPlayerInRoster()
@@ -992,7 +937,7 @@ function BuffPower:CreateUI()
     if not self.AnchorButton then
         -- Create anchor as true "group-style" button, not WoW template
         local displayConfig = (BuffPower.db and BuffPower.db.profile and BuffPower.db.profile.display) or BuffPower.defaults.profile.display
-        local buttonWidth = (displayConfig and displayConfig.groupButtonWidth) or 120
+        local buttonWidth = (displayConfig and displayConfig.buttonWidth) or 120
         local buttonHeight = (displayConfig and displayConfig.buttonHeight) or 28
         local fontFace = (displayConfig and displayConfig.fontFace) or "GameFontNormalSmall"
         local fontSize = (displayConfig and displayConfig.fontSize) or 12
@@ -1107,7 +1052,7 @@ function BuffPower:CreateUI()
     for i = 1, MAX_RAID_GROUPS do
         if not BuffPowerGroupButtons[i] then
             local displayConfig = (BuffPower.db and BuffPower.db.profile and BuffPower.db.profile.display) or BuffPower.defaults.profile.display
-            local buttonWidth = (displayConfig and displayConfig.groupButtonWidth) or 120
+            local buttonWidth = (displayConfig and displayConfig.buttonWidth) or 120
             local buttonHeight = (displayConfig and displayConfig.buttonHeight) or 28
             local fontFace = (displayConfig and displayConfig.fontFace) or "GameFontNormalSmall"
             local fontSize = (displayConfig and displayConfig.fontSize) or 12
@@ -1181,7 +1126,6 @@ function BuffPower:CreateUI()
             groupButton:SetScript("OnEnter", function(self_button)
                 BuffPower_ShowGroupMemberFrame(self_button, self_button.groupID)
             end)
-            -- Robust mouseout hide logic: Timer delayed check for pointer leaving both the button AND the popout frame, as in previous working build.
             groupButton:SetScript("OnLeave", function(self_button)
                 if BuffPowerGroupMemberFrame then
                     BuffPowerGroupMemberFrame._popoutShowId = (BuffPowerGroupMemberFrame._popoutShowId or 0) + 1
@@ -1341,144 +1285,44 @@ function BuffPower:UpdateGroupButtonContent(button, groupId)
         end
     end
 
-    -- REMOVE the assignment display and groupText label entirely.
-    -- Remove (hide) question mark icon and add left-aligned label G#
-    if button.icon then
-        button.icon:Hide()
-        button.icon:SetTexture("") -- Remove question mark/old art
-    end
-    if not button.groupNumberLabel then
-        button.groupNumberLabel = button:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-        button.groupNumberLabel:SetJustifyH("LEFT")
-        button.groupNumberLabel:SetTextColor(1,1,0.65, 1)
-        button.groupNumberLabel:SetPoint("LEFT", button, "LEFT", 4, 0)
-    end
-    button.groupNumberLabel:SetText(groupText)
-    button.groupNumberLabel:Show()
+    -- Set class icon if we have assignment
+    if assignment and assignment.playerName and assignment.playerClass and
+       BuffPower.ClassBuffInfo and BuffPower.ClassBuffInfo[assignment.playerClass] and
+       BuffPower.ClassColors and BuffPower.ClassColors[assignment.playerClass] then
 
-    button.text:SetText("") -- Legacy; text no longer used
+        local buffInfo = BuffPower.ClassBuffInfo[assignment.playerClass]
+        -- Icon
+        button.icon:SetTexture(buffInfo.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
 
-    -- Remove old group buff icon row if it already exists
-    if button.groupBuffIcons then
-        for _, icon in ipairs(button.groupBuffIcons) do
-            icon:Hide()
-            icon:SetParent(nil)
-        end
-    end
-    button.groupBuffIcons = {}
+        -- Set shortened display name
+        local displayName = assignment.playerName
+        if displayName and string.len(displayName) > 5 then displayName = string.sub(displayName, 1, 4) .. ".." end
+        button.text:SetText(groupText .. ": " .. displayName)
 
-    -- Build the row of group buff icons for buffs the player can cast
-    local _, playerClass = UnitClass("player")
-
-    -- Table of group buffs the player can cast -- be sure to include multiple (for priests: Prayer of Fortitude, Spirit, Shadow)
-    local buffsAvailable = {}
-    local PRAYER_OF_SPIRIT_GROUP_IDS = { 25312, 32999, 27681 }
-    if playerClass == "PRIEST" then
-        local orderedKeys = { "FORTITUDE", "SPIRIT", "SHADOW" }
-        for _, buffKey in ipairs(orderedKeys) do
-            local buff = BuffPower.BuffTypes[buffKey]
-            if buff and buff.group_spell_name and buff.buffer_class == playerClass then
-                local groupSpellKnown = false
-                if buffKey == "SPIRIT" then
-                    if (not buff.requires_talent or BuffPower:PlayerHasDivineSpiritTalent()) then
-                        for _, sid in ipairs(PRAYER_OF_SPIRIT_GROUP_IDS) do
-                            if IsSpellKnown and IsSpellKnown(sid) then
-                                groupSpellKnown = true
-                                break
-                            end
-                        end
-                    end
-                else
-                    if (not buff.requires_talent or BuffPower:PlayerHasDivineSpiritTalent()) then
-                        groupSpellKnown = IsSpellKnown and IsSpellKnown(buff.group_spell_id)
-                    end
-                end
-                if groupSpellKnown then
-                    table.insert(buffsAvailable, buff)
-                end
+        -- Enhancement Plan: Show actual timer for shortest group buff
+        local duration = self:GetShortestGroupBuffDuration(groupId)
+        if duration and duration > 0 then
+            local m = math.floor(duration / 60)
+            local s = math.fmod(duration, 60)
+            button.time:SetText(string.format("%d:%02d", m, s))
+            if duration < 30 then
+                button.time:SetTextColor(1, 0, 0) -- Red for critical
+            else
+                button.time:SetTextColor(1, 1, 1)
             end
+        else
+            button.time:SetText("") -- Hide if missing buff
         end
     else
-        for buffKey, buff in pairs(BuffPower.BuffTypes or {}) do
-            if buff.group_spell_name and buff.buffer_class == playerClass then
-                local groupSpellKnown = false
-                if (not buff.requires_talent or playerClass ~= "PRIEST" or BuffPower:PlayerHasDivineSpiritTalent()) then
-                    groupSpellKnown = IsSpellKnown and IsSpellKnown(buff.group_spell_id)
-                end
-                if groupSpellKnown then
-                    table.insert(buffsAvailable, buff)
-                end
-            end
+        -- Unassigned group
+        button.text:SetText(groupText .. ": " .. (numGroupMembers > 0 and "None" or "Empty"))
+        button.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+        -- Reset border color
+        if button.border and button.border.SetBackdropBorderColor then
+            button.border:SetBackdropBorderColor(0.4, 0.4, 0.4, 0.8) -- Gray for unassigned
         end
+        button.time:SetText("") -- No timer if no assignment
     end
-
-    local iconSize = 24
-    local iconSpacing = 2
-    local prevIcon = nil
-    for idx, buff in ipairs(buffsAvailable) do
-        local iconBtn = button.groupBuffIcons[idx] or CreateFrame("Button", nil, button, "SecureActionButtonTemplate")
-        button.groupBuffIcons[idx] = iconBtn
-        iconBtn:SetFrameLevel(button:GetFrameLevel()+1)
-        iconBtn:SetSize(iconSize, iconSize)
-        if idx == 1 then
-            iconBtn:SetPoint("LEFT", button, "LEFT", 38, 0)
-        else
-            iconBtn:SetPoint("LEFT", prevIcon, "RIGHT", iconSpacing, 0)
-        end
-        prevIcon = iconBtn
-        if not iconBtn.texture then
-            iconBtn.texture = iconBtn:CreateTexture(nil, "ARTWORK")
-            iconBtn.texture:SetAllPoints()
-        end
-        -- Show group_icon if available, else fall back to icon from the ClassBuffInfo table, then fallback to named icon
-        local iconTexture = buff.group_icon
-        if not iconTexture then
-            local classMeta = BuffPower.ClassBuffInfo and BuffPower.ClassBuffInfo[playerClass]
-            -- Try to match group_spell_name to the class meta for the right icon
-            if classMeta and buff.group_spell_name == classMeta.group_spell_name and classMeta.group_icon then
-                iconTexture = classMeta.group_icon
-            end
-        end
-        if not iconTexture then
-            iconTexture = buff.icon or "Interface\\Icons\\INV_Misc_QuestionMark"
-        end
-        iconBtn.texture:SetTexture(iconTexture)
-        iconBtn:Show()
-
-        -- Setup secure attributes for the group buff
-        iconBtn:SetAttribute("type", "spell")
-        iconBtn:SetAttribute("spell", buff.group_spell_name)
-        iconBtn:SetAttribute("unit", "player")
-        
-        -- Tooltip: show info about the group buff
-        iconBtn:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:SetText(buff.group_spell_name)
-            if buff.group_spell_id then
-                GameTooltip:AddLine("|cffccccccSpellID: "..buff.group_spell_id.."|r", 1, 1, 1)
-            end
-            GameTooltip:AddLine(buff.name, 1, 1, 1)
-            GameTooltip:Show()
-        end)
-        iconBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
-        iconBtn:SetScript("PostClick", function(selfB)
-            C_Timer.After(0.6, function()
-                if BuffPower and BuffPower.UpdateRoster then
-                    BuffPower:UpdateRoster()
-                end
-            end)
-        end)
-    end
-
-    -- Hide any extra old groupBuffIcons if previously over-allocated
-    for idx = #buffsAvailable+1, #button.groupBuffIcons do
-        button.groupBuffIcons[idx]:Hide()
-        button.groupBuffIcons[idx]:SetParent(nil)
-    end
-
-    -- Hide timer if no group buff timer needed
-    button.time:SetText("")
 end
 
 function BuffPower:UpdateUI()
@@ -1581,16 +1425,6 @@ function BuffPower:OnInitialize()
     -- Force window to show for debugging
     BuffPowerDB.showWindow = true
     DebugPrint("BuffPower:OnInitialize - Forcing showWindow = true")
-
-    -- Enforce larger player/member button width for all profiles, even existing ones
-    BuffPowerDB.display = BuffPowerDB.display or {}
-    BuffPowerDB.display.buttonWidth = 150
-    BuffPowerDB.display.groupButtonWidth = 120
-    if BuffPowerDB.profile then
-        BuffPowerDB.profile.display = BuffPowerDB.profile.display or {}
-        BuffPowerDB.profile.display.buttonWidth = 150
-        BuffPowerDB.profile.display.groupButtonWidth = 120
-    end
 
     if not BuffPowerDB.orbPosition then BuffPowerDB.orbPosition = { a1 = "CENTER", a2 = "CENTER", x = 0, y = 0 } end
     
