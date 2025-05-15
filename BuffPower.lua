@@ -104,28 +104,70 @@ end
 
 -- Helper: Update all per-button visual/logic; called by Populator and by ticker
 local function UpdateMemberButtonAppearance(btn, member, buffInfo, bufferClass)
+    -- Always get config color for "groupBuffed" for background fill so group/member are identical
+    local colorConfig = (BuffPower.db and BuffPower.db.colors) or (BuffPower.defaults and BuffPower.defaults.profile.colors) or {}
+    local groupBuffed = colorConfig.groupBuffed or {0.2, 0.8, 0.2, 0.7}
+    -- If user only set 3 values, fill alpha with default.
+    local groupBuffedR, groupBuffedG, groupBuffedB, groupBuffedA = groupBuffed[1] or 0.2, groupBuffed[2] or 0.8, groupBuffed[3] or 0.2, groupBuffed[4] or 0.7
+
     local classColorHex = (BuffPower.ClassColors and BuffPower.ClassColors[member.class] and BuffPower.ClassColors[member.class].hex) or "|cffffffff"
-    -- Determine if this member is a target for this group's bufferClass
     local needsThisBuff = BuffPower:NeedsBuffFrom(bufferClass, member.class)
     local needsBuff = false
     if buffInfo and member.unitid and needsThisBuff then
         needsBuff = not BuffPower:GetUnitBuffState(member.unitid, bufferClass)
     end
+
+    -- Ensure color always set for label coloring
     local color
     if not needsThisBuff then
         color = { r = 0.5, g = 0.5, b = 0.5 }
     elseif needsBuff then
         color = { r = 1, g = 0.2, b = 0.2 }
     else
-        color = { r = 0.2, g = 1, b = 0.2 }
+        color = { r = groupBuffedR, g = groupBuffedG, b = groupBuffedB }
     end
+
+    -- Visual border (rounded) for each button
+    if not btn.border then
+        btn.border = CreateFrame("Frame", nil, btn)
+        btn.border:SetFrameLevel(btn:GetFrameLevel() - 1)
+        btn.border:SetPoint("TOPLEFT", btn, "TOPLEFT", -1, 1)
+        btn.border:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 1, -1)
+        if BackdropTemplateMixin then
+            Mixin(btn.border, BackdropTemplateMixin)
+        end
+        btn.border:SetBackdrop({
+            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            edgeSize = 8,
+            insets = {left = 0, right = 0, top = 0, bottom = 0},
+        })
+        btn.border:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.9)
+    end
+
+    -- Buff icon (left)
+    if not btn.buffIcon then
+        btn.buffIcon = btn:CreateTexture(nil, "ARTWORK")
+        btn.buffIcon:SetSize(18, 18)
+        btn.buffIcon:SetPoint("LEFT", btn, "LEFT", 2, 0)
+        btn.buffIcon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    end
+
+    -- Label (move right to allow icon)
     if not btn.label then
         btn.label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        btn.label:SetPoint("LEFT", btn, "LEFT", 8, 0)
     end
+    btn.label:SetPoint("LEFT", btn.buffIcon, "RIGHT", 4, 0)
     btn.label:SetText(classColorHex..member.name.."|r")
     btn.label:SetTextColor(color.r, color.g, color.b)
-    -- Background
+
+    -- Timer (right side)
+    if not btn.timer then
+        btn.timer = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        btn.timer:SetJustifyH("RIGHT")
+        btn.timer:SetPoint("RIGHT", btn, "RIGHT", -6, 0)
+    end
+
+    -- Background fill
     if not btn.bg then
         btn.bg = btn:CreateTexture(nil, "BACKGROUND")
         btn.bg:SetAllPoints()
@@ -135,8 +177,58 @@ local function UpdateMemberButtonAppearance(btn, member, buffInfo, bufferClass)
     elseif needsBuff then
         btn.bg:SetColorTexture(1, 0.2, 0.2, 0.5)
     else
-        btn.bg:SetColorTexture(0.2, 1, 0.2, 0.5)
+        btn.bg:SetColorTexture(groupBuffedR, groupBuffedG, groupBuffedB, groupBuffedA)
     end
+
+    -- Buff icon & timer logic (defensive arg check)
+    local iconTexture = "Interface\\Icons\\INV_Misc_QuestionMark"
+    local timerText = ""
+    local timerCritical = false
+    local foundBuffIcon = false
+    if buffInfo and member.unitid then
+        local i = 1
+        while true do
+            local name, icon, _, _, _, _, expirationTime, _, _, spellId = UnitAura(member.unitid, i, "HELPFUL")
+            if not name then break end
+            -- If LCD changes signature, expirationTime could be not a number. Check.
+            local validSpell = (spellId == buffInfo.single_spell_id or spellId == buffInfo.group_spell_id)
+                              or (name == buffInfo.single_spell_name or name == buffInfo.group_spell_name)
+            if validSpell then
+                if icon then
+                    iconTexture = icon
+                    foundBuffIcon = true
+                end
+                -- Defensive: Only handle valid numeric expirationTime (may be tainted by wrappers).
+                if type(expirationTime) == "number" and expirationTime > 0 then
+                    local remaining = expirationTime - GetTime()
+                    if remaining > 0 then
+                        local m = math.floor(remaining / 60)
+                        local s = math.fmod(remaining, 60)
+                        timerText = string.format("%d:%02d", m, s)
+                        if remaining < 30 then
+                            timerCritical = true
+                        end
+                    end
+                end
+                break
+            end
+            i = i + 1
+        end
+    end
+
+    -- Only use questionmark if no buff found, else use icon or fallback to class icon if available
+    if not foundBuffIcon and buffInfo and buffInfo.icon then
+        iconTexture = buffInfo.icon
+    end
+
+    btn.buffIcon:SetTexture(iconTexture or "Interface\\Icons\\INV_Misc_QuestionMark")
+    btn.timer:SetText(timerText)
+    if timerCritical then
+        btn.timer:SetTextColor(1, 0, 0)
+    else
+        btn.timer:SetTextColor(1, 1, 1)
+    end
+
     -- Tooltip/secure
     if not needsThisBuff then
         btn.tooltip = "No buff needed"
@@ -162,12 +254,19 @@ end
 
 -- Helper: Populates/reset all member buttons
 local function PopulateGroupMemberButtons(groupId, members, buffInfo, playerClass)
-    local buttonHeight, buttonWidth, verticalSpacing = 22, 120, 1
+    -- Fetch config so member button size matches group button
+    local displayConfig = (BuffPower.db and BuffPower.db.profile and BuffPower.db.profile.display) or (BuffPower.defaults and BuffPower.defaults.profile and BuffPower.defaults.profile.display) or {}
+    local buttonWidth = (displayConfig.buttonWidth ~= nil) and displayConfig.buttonWidth or 120
+    local buttonHeight = (displayConfig.buttonHeight ~= nil) and displayConfig.buttonHeight or 28
+    local verticalSpacing = (displayConfig.verticalSpacing ~= nil) and displayConfig.verticalSpacing or 1
+    local framePadding = 16  -- Keep consistent with BuffPower_ShowGroupMemberFrame
+    local left_offset = math.floor(framePadding / 2)
     local yOffset = -8
     for idx, member in ipairs(members) do
         local btn = CreateFrame("Button", "BuffPowerGroupMemberButton"..idx, BuffPowerGroupMemberFrame, "SecureActionButtonTemplate")
         btn:SetSize(buttonWidth, buttonHeight)
-        btn:SetPoint("TOPLEFT", 8, yOffset)
+        -- Center the button in the member frame horizontally
+        btn:SetPoint("TOPLEFT", left_offset, yOffset)
         yOffset = yOffset - (buttonHeight + verticalSpacing)
         UpdateMemberButtonAppearance(btn, member, buffInfo, playerClass)
         btn:Show()
@@ -268,10 +367,14 @@ local function BuffPower_ShowGroupMemberFrame(anchorButton, groupId)
     end
     local buffInfo = groupBuffClass and BuffPower.ClassBuffInfo and BuffPower.ClassBuffInfo[groupBuffClass] or nil
     PopulateGroupMemberButtons(groupId, members, buffInfo, groupBuffClass)
-    -- Set frame size
-    local buttonHeight, verticalSpacing = 22, 1
-    local h = (#members > 0 and (#members * (buttonHeight + verticalSpacing) + 16)) or 20
-    BuffPowerGroupMemberFrame:SetSize(120 + 16, h)
+    -- Set frame size to exactly fit member buttons (including any config-driven width/padding)
+    local displayConfig = (BuffPower.db and BuffPower.db.profile and BuffPower.db.profile.display) or (BuffPower.defaults and BuffPower.defaults.profile and BuffPower.defaults.profile.display) or {}
+    local buttonWidth = (displayConfig.buttonWidth ~= nil) and displayConfig.buttonWidth or 120
+    local buttonHeight = (displayConfig.buttonHeight ~= nil) and displayConfig.buttonHeight or 28
+    local verticalSpacing = (displayConfig.verticalSpacing ~= nil) and displayConfig.verticalSpacing or 1
+    local framePadding = 16 -- was +16 for consistency with old popout visuals
+    local h = (#members > 0 and (#members * (buttonHeight + verticalSpacing) + framePadding)) or 20
+    BuffPowerGroupMemberFrame:SetSize(buttonWidth + framePadding, h)
     -- Position the frame to the right of the anchor button
     BuffPowerGroupMemberFrame:SetPoint("LEFT", anchorButton, "RIGHT", 8, 0)
     BuffPowerGroupMemberFrame:Show()
