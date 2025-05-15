@@ -15,4 +15,5 @@ locale\enUS.lua
 
 BuffPowerValues.lua
 BuffPowerOptions.lua
+BuffPowerOptionsWindow.lua
 BuffPower.lua

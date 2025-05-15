@@ -30,13 +30,70 @@ local L = LibStub("AceLocale-3.0"):GetLocale(addonName)
 -- Constants
 local MAX_RAID_MEMBERS = 40
 -- Returns true if bufferClass should buff memberClass using their main buff
-function BuffPower:NeedsBuffFrom(bufferClass, memberClass)
+-- Returns true if bufferClass should buff memberClass with buffKey (dynamic, considers options/talent/eligible)
+function BuffPower:NeedsBuffFrom(bufferClass, memberClass, buffKey)
     bufferClass = bufferClass and bufferClass:upper()
     memberClass = memberClass and memberClass:upper()
-    if bufferClass == "MAGE" then
-        return memberClass ~= "WARRIOR" and memberClass ~= "ROGUE"
-    elseif bufferClass == "PRIEST" or bufferClass == "DRUID" then
-        return true
+    -- Legacy fallback: if no buffKey provided, keep original logic
+    if not buffKey or not BuffPower.BuffTypes or not BuffPower.BuffTypes[buffKey] then
+        if bufferClass == "MAGE" then
+            return memberClass ~= "WARRIOR" and memberClass ~= "ROGUE"
+        elseif bufferClass == "PRIEST" or bufferClass == "DRUID" then
+            return true
+        end
+        return false
+    end
+
+    local buff = BuffPower.BuffTypes[buffKey]
+    -- Only buffers of correct class may provide this buff
+    if buff.buffer_class ~= bufferClass then
+        return false
+    end
+
+    -- User options: If optional, only buff if enabled
+    if buff.is_optional then
+        if not BuffPowerDB or not BuffPowerDB.buffEnableOptions or BuffPowerDB.buffEnableOptions[buffKey] == false then
+            return false
+        end
+    end
+
+    -- Class eligibility
+    local eligible = false
+    for _, c in ipairs(buff.eligible_target_classes) do
+        if c == memberClass then
+            eligible = true
+            break
+        end
+    end
+    if not eligible then
+        return false
+    end
+
+    -- If requires_talent (Spirit), check the buffer has the talent
+    if buff.requires_talent and bufferClass == "PRIEST" then
+        if not BuffPower:PlayerHasDivineSpiritTalent() then
+            return false
+        end
+    end
+
+    return true
+end
+
+-- Returns true if the player (priest) has Divine Spirit talent
+function BuffPower:PlayerHasDivineSpiritTalent()
+    -- Classic Talent: Discipline tree, "Divine Spirit"
+    -- For Classic: Talent points: 2nd row, 4th talent in Discipline (tab=1)
+    -- Try name-based fallback:
+    local _, class = UnitClass("player")
+    if class ~= "PRIEST" then return false end
+    for tIdx = 1, GetNumTalentTabs() do
+        local numTalents = GetNumTalents(tIdx)
+        for i = 1, numTalents do
+            local name, _, _, _, rank = GetTalentInfo(tIdx, i)
+            if name == "Divine Spirit" and rank and rank > 0 then
+                return true
+            end
+        end
     end
     return false
 end
@@ -96,28 +153,25 @@ local function HideGroupMemberButtons()
 end
 
 -- Helper: Update all per-button visual/logic; called by Populator and by ticker
+-- UpdateMemberButtonAppearance: Now supports multiple buffs per member via SecureActionButton icons (safe click-to-buff)
 local function UpdateMemberButtonAppearance(btn, member, buffInfo, bufferClass)
-    -- Always get config color for "groupBuffed" for background fill so group/member are identical
+    -- UI layout constants for icons
+    local ICON_SIZE = 18
+    local ICON_PADDING = 2
+    local MAX_BUFFS = 4
+
     local colorConfig = (BuffPower.db and BuffPower.db.colors) or (BuffPower.defaults and BuffPower.defaults.profile.colors) or {}
     local groupBuffed = colorConfig.groupBuffed or {0.2, 0.8, 0.2, 0.7}
-    -- If user only set 3 values, fill alpha with default.
-    local groupBuffedR, groupBuffedG, groupBuffedB, groupBuffedA = groupBuffed[1] or 0.2, groupBuffed[2] or 0.8, groupBuffed[3] or 0.2, groupBuffed[4] or 0.7
+    local groupBuffedA = groupBuffed[4] or 0.7
 
     local classColorHex = (BuffPower.ClassColors and BuffPower.ClassColors[member.class] and BuffPower.ClassColors[member.class].hex) or "|cffffffff"
-    local needsThisBuff = BuffPower:NeedsBuffFrom(bufferClass, member.class)
-    local needsBuff = false
-    if buffInfo and member.unitid and needsThisBuff then
-        needsBuff = not BuffPower:GetUnitBuffState(member.unitid, bufferClass)
-    end
 
-    -- Ensure color always set for label coloring
-    local color
-    if not needsThisBuff then
-        color = { r = 0.5, g = 0.5, b = 0.5 }
-    elseif needsBuff then
-        color = { r = 1, g = 0.2, b = 0.2 }
-    else
-        color = { r = groupBuffedR, g = groupBuffedG, b = groupBuffedB }
+    -- Find all buffs this bufferClass could cast for this member
+    local buffsToCheck = {}
+    for buffKey, buff in pairs(BuffPower.BuffTypes or {}) do
+        if BuffPower:NeedsBuffFrom(bufferClass, member.class, buffKey) then
+            table.insert(buffsToCheck, { key = buffKey, info = buff })
+        end
     end
 
     -- Visual border (rounded) for each button
@@ -137,112 +191,175 @@ local function UpdateMemberButtonAppearance(btn, member, buffInfo, bufferClass)
         btn.border:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.9)
     end
 
-    -- Buff icon (left)
-    if not btn.buffIcon then
-        btn.buffIcon = btn:CreateTexture(nil, "ARTWORK")
-        btn.buffIcon:SetSize(18, 18)
-        btn.buffIcon:SetPoint("LEFT", btn, "LEFT", 2, 0)
-        btn.buffIcon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    -- Clear old multi-buff icons/buttons and tooltips
+    btn.buffIcons = btn.buffIcons or {}
+    for i, icon in ipairs(btn.buffIcons) do
+        if icon then icon:Hide() end
     end
 
-    -- Label (move right to allow icon)
+    -- Add new SecureActionButton icons for each buff (for secure click-to-buff)
+    local iconsDisplayed = 0
+    local tooltipLines = {}
+
+    for i, buffData in ipairs(buffsToCheck) do
+        local buffKey = buffData.key
+        local buff = buffData.info
+        local iconBtn = btn.buffIcons[i]
+        if not iconBtn then
+            iconBtn = CreateFrame("Button", (btn:GetName() or "").."BuffBtn"..i, btn, "SecureActionButtonTemplate")
+            btn.buffIcons[i] = iconBtn
+            iconBtn:SetFrameLevel(btn:GetFrameLevel() + 1)
+            iconBtn:SetSize(ICON_SIZE, ICON_SIZE)
+            iconBtn.texture = iconBtn:CreateTexture(nil, "ARTWORK")
+            iconBtn.texture:SetAllPoints()
+            iconBtn:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+        end
+        iconBtn:SetPoint("LEFT", btn, "LEFT", ICON_PADDING + (i-1)*(ICON_SIZE+ICON_PADDING), 0)
+        iconBtn:Show()
+
+        -- Default/fallback for icon
+        iconBtn.texture:SetTexture(buff.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+        iconBtn.texture:SetVertexColor(1,1,1,1)
+
+        -- Setup secure attributes
+        iconBtn:SetAttribute("type", "spell")
+        iconBtn:SetAttribute("spell", buff.single_spell_name)
+        local target = member.unitid or member.name
+        iconBtn:SetAttribute("unit", target)
+
+        -- Check if member is missing this buff
+        local hasBuff = false
+        local timerText = ""
+        local critical = false
+        if member.unitid then
+            local idx = 1
+            while true do
+                local name, iconTex, _, _, _, _, expirationTime, _, _, spellId = UnitAura(member.unitid, idx, "HELPFUL")
+                if not name then break end
+                local valid = (spellId == buff.single_spell_id or spellId == buff.group_spell_id)
+                  or (name == buff.single_spell_name or name == buff.group_spell_name)
+                if valid then
+                    hasBuff = true
+                    if iconTex then
+                        iconBtn.texture:SetTexture(iconTex)
+                    else
+                        iconBtn.texture:SetTexture(buff.icon)
+                    end
+                    if type(expirationTime) == "number" and expirationTime > 0 then
+                        local remain = expirationTime - GetTime()
+                        if remain > 0 then
+                            local m = math.floor(remain / 60)
+                            local s = math.fmod(remain, 60)
+                            timerText = string.format("%d:%02d", m, s)
+                            if remain < 30 then critical = true end
+                        end
+                    end
+                    break
+                end
+                idx = idx + 1
+            end
+        end
+        if not hasBuff then
+            iconBtn.texture:SetTexture(buff.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+            iconBtn.texture:SetVertexColor(1, 0.2, 0.2, 1) -- Red
+            table.insert(tooltipLines, "|cffFF4040"..buff.name.."|r: |cffff3333Missing|r")
+        else
+            iconBtn.texture:SetVertexColor(0.7,1,0.7, 0.9)
+            table.insert(tooltipLines, "|cffA0FFA0"..buff.name.."|r: |cff33ff33Buffed|r "..(timerText or ""))
+        end
+
+        -- Tooltip for each buff icon
+        iconBtn:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText(buff.name)
+            if hasBuff then
+                GameTooltip:AddLine("|cff33ff33Buffed|r "..(timerText or ""), 1,1,1)
+            else
+                GameTooltip:AddLine("|cffff3333Missing|r", 1,0.6,0.6)
+            end
+            GameTooltip:Show()
+        end)
+        iconBtn:SetScript("OnLeave", function(self)
+            GameTooltip:Hide()
+        end)
+
+        iconsDisplayed = iconsDisplayed + 1
+        if iconsDisplayed >= MAX_BUFFS then break end
+    end
+
+    -- Show main member label right of final icon
     if not btn.label then
         btn.label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     end
-    btn.label:SetPoint("LEFT", btn.buffIcon, "RIGHT", 4, 0)
+    local nameLabelOffset = ICON_PADDING + iconsDisplayed * (ICON_SIZE + ICON_PADDING)
+    btn.label:SetPoint("LEFT", btn, "LEFT", nameLabelOffset, 0)
     btn.label:SetText(classColorHex..member.name.."|r")
-    btn.label:SetTextColor(color.r, color.g, color.b)
+    btn.label:SetTextColor(1,1,1)
 
-    -- Timer (right side)
-    if not btn.timer then
-        btn.timer = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        btn.timer:SetJustifyH("RIGHT")
-        btn.timer:SetPoint("RIGHT", btn, "RIGHT", -6, 0)
+    -- Hide unused icons/buttons
+    for i = iconsDisplayed+1, #btn.buffIcons do
+        btn.buffIcons[i]:Hide()
     end
 
-    -- Background fill
-    if not btn.bg then
-        btn.bg = btn:CreateTexture(nil, "BACKGROUND")
-        btn.bg:SetAllPoints()
-    end
-    if not needsThisBuff then
-        btn.bg:SetColorTexture(0.5,0.5,0.5, 0.5)
-    elseif needsBuff then
-        btn.bg:SetColorTexture(1, 0.2, 0.2, 0.5)
-    else
-        btn.bg:SetColorTexture(groupBuffedR, groupBuffedG, groupBuffedB, groupBuffedA)
-    end
-
-    -- Buff icon & timer logic (defensive arg check)
-    local iconTexture = "Interface\\Icons\\INV_Misc_QuestionMark"
-    local timerText = ""
-    local timerCritical = false
-    local foundBuffIcon = false
-    if buffInfo and member.unitid then
-        local i = 1
-        while true do
-            local name, icon, _, _, _, _, expirationTime, _, _, spellId = UnitAura(member.unitid, i, "HELPFUL")
-            if not name then break end
-            -- If LCD changes signature, expirationTime could be not a number. Check.
-            local validSpell = (spellId == buffInfo.single_spell_id or spellId == buffInfo.group_spell_id)
-                              or (name == buffInfo.single_spell_name or name == buffInfo.group_spell_name)
-            if validSpell then
-                if icon then
-                    iconTexture = icon
-                    foundBuffIcon = true
-                end
-                -- Defensive: Only handle valid numeric expirationTime (may be tainted by wrappers).
-                if type(expirationTime) == "number" and expirationTime > 0 then
-                    local remaining = expirationTime - GetTime()
-                    if remaining > 0 then
-                        local m = math.floor(remaining / 60)
-                        local s = math.fmod(remaining, 60)
-                        timerText = string.format("%d:%02d", m, s)
-                        if remaining < 30 then
-                            timerCritical = true
-                        end
-                    end
-                end
-                break
-            end
-            i = i + 1
-        end
-    end
-
-    -- Only use questionmark if no buff found, else use icon or fallback to class icon if available
-    if not foundBuffIcon and buffInfo and buffInfo.icon then
-        iconTexture = buffInfo.icon
-    end
-
-    btn.buffIcon:SetTexture(iconTexture or "Interface\\Icons\\INV_Misc_QuestionMark")
-    btn.timer:SetText(timerText)
-    if timerCritical then
-        btn.timer:SetTextColor(1, 0, 0)
-    else
-        btn.timer:SetTextColor(1, 1, 1)
-    end
-
-    -- Tooltip/secure
-    if not needsThisBuff then
-        btn.tooltip = "No buff needed"
-        btn:SetAttribute("type", nil)
-        btn:SetAttribute("spell", nil)
-        btn:SetAttribute("unit", nil)
-    elseif buffInfo then
-        btn:SetAttribute("type", "spell")
-        btn:SetAttribute("spell", buffInfo.single_spell_name)
+    -- Timer and background based on worst buff (missing = red, all buffed = green)
+    local missingCount = 0
+    for i, buffData in ipairs(buffsToCheck) do
+        local buff = buffData.info
+        local hasBuff = false
         if member.unitid then
-            btn:SetAttribute("unit", member.unitid)
-        else
-            btn:SetAttribute("unit", member.name)
+            local idx = 1
+            while true do
+                local name, _, _, _, _, _, _, _, _, spellId = UnitAura(member.unitid, idx, "HELPFUL")
+                if not name then break end
+                local valid = (spellId == buff.single_spell_id or spellId == buff.group_spell_id)
+                  or (name == buff.single_spell_name or name == buff.group_spell_name)
+                if valid then
+                    hasBuff = true
+                    break
+                end
+                idx = idx + 1
+            end
         end
-        btn.tooltip = (needsBuff and "|cffff3333Needs buff! " or "|cff33ff33Buffed. ") .. "Click to buff "..member.name.." with "..buffInfo.single_spell_name
-    else
-        btn.tooltip = "Cannot find buff for class "..tostring(bufferClass)
-        btn:SetAttribute("type", nil)
-        btn:SetAttribute("spell", nil)
-        btn:SetAttribute("unit", nil)
+        if not hasBuff then missingCount = missingCount + 1 end
     end
+
+    -- If no relevant buffs, fade
+    if #buffsToCheck == 0 then
+        if not btn.bg then
+            btn.bg = btn:CreateTexture(nil, "BACKGROUND")
+            btn.bg:SetAllPoints()
+        end
+        btn.bg:SetColorTexture(0.5,0.5,0.5, 0.5)
+        btn.label:SetTextColor(0.5,0.5,0.5)
+    else
+        if not btn.bg then
+            btn.bg = btn:CreateTexture(nil, "BACKGROUND")
+            btn.bg:SetAllPoints()
+        end
+        if missingCount == 0 then
+            btn.bg:SetColorTexture(0.2, 0.8, 0.2, groupBuffedA)
+            btn.label:SetTextColor(0.1,1,0.1)
+        else
+            btn.bg:SetColorTexture(1, 0.2, 0.2, 0.5)
+            btn.label:SetTextColor(1,0.2,0.2)
+        end
+    end
+
+    -- Tooltip for the whole line (merged)
+    btn.tooltip = table.concat(tooltipLines, "\n")
+    btn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText(member.name)
+        GameTooltip:AddLine(self.tooltip, 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    btn:SetScript("OnLeave", function(self)
+        GameTooltip:Hide()
+    end)
+    -- Disable generic click on this main button
+    btn:SetAttribute("type", nil)
+    btn:SetAttribute("spell", nil)
+    btn:SetAttribute("unit", nil)
 end
 
 -- Helper: Populates/reset all member buttons
@@ -897,15 +1014,37 @@ function BuffPower:CreateUI()
         anchor:SetScript("OnClick", function(self, button)
             if button == "RightButton" then
                 if BuffPowerDB and BuffPowerDB.locked then
-                    DEFAULT_CHAT_FRAME:AddMessage(L["UI is locked. Unlock via options or command."] or "UI is locked."); return
+                    DEFAULT_CHAT_FRAME:AddMessage((L and L["UI is locked. Unlock via options or command."]) or "UI is locked.")
+                    return
                 end
-                if BuffPower and type(BuffPower.OpenAssignmentMenu) == "function" then
-                    BuffPower:OpenAssignmentMenu(1, self)
-                elseif InterfaceOptionsFrame_OpenToCategory then
-                    InterfaceOptionsFrame_OpenToCategory(BuffPower.optionsPanelName or "BuffPower")
+                -- Open standalone options window, not Blizzard config
+                -- Always call global at click time to ensure up-to-date reference
+                if _G.BuffPower and _G.BuffPower.ShowStandaloneOptions then
+                    _G.BuffPower.ShowStandaloneOptions()
+                else
+                    DEFAULT_CHAT_FRAME:AddMessage("BuffPower: Standalone options are not available or not fully initialized.")
                 end
             end
         end)
+        -- Add right-click-to-options directly on the BuffPower text as well
+        if anchor.text then
+            anchor.text:EnableMouse(true)
+            anchor.text:SetScript("OnMouseUp", function(self, button)
+                if button == "RightButton" then
+                    if BuffPowerDB and BuffPowerDB.locked then
+                        DEFAULT_CHAT_FRAME:AddMessage((L and L["UI is locked. Unlock via options or command."]) or "UI is locked.")
+                        return
+                    end
+                    -- Always call global at click time to ensure up-to-date reference
+                    if _G.BuffPower and _G.BuffPower.ShowStandaloneOptions then
+                        _G.BuffPower.ShowStandaloneOptions()
+                    else
+                        DEFAULT_CHAT_FRAME:AddMessage("BuffPower: Standalone options are not available or not fully initialized.")
+                    end
+                end
+            end)
+        end
+    
         self.AnchorButton = anchor
     end
 
@@ -1328,6 +1467,12 @@ function BuffPower:OnInitialize()
             self:CreateOptionsPanel(); BuffPower.optionsPanelCreated = true
         end
     --]]
+    -- Ensure options panel is created every time OnInitialize runs!
+    if self.CreateOptionsPanel and not BuffPower.optionsPanelCreated then
+        self:CreateOptionsPanel()
+        BuffPower.optionsPanelCreated = true
+        DEFAULT_CHAT_FRAME:AddMessage("|cffeda55fBuffPower:|r Options panel registered.")
+    end
     DebugPrint("BuffPower OnInitialize finished.") -- Changed message for clarity
 end
 
@@ -1463,13 +1608,11 @@ function BuffPower:ChatCommand(input)
         -- Check if the options panel object exists and has a name
         local panelToShow = _G[(BuffPower.optionsPanelName or "BuffPower") .. "OptionsPanel"] or _G["BuffPowerOptionsPanel"]
 
-        if InterfaceOptionsFrame_OpenToCategory and panelToShow and panelToShow.name then
-            InterfaceOptionsFrame_OpenToCategory(panelToShow.name)
-        elseif InterfaceOptionsFrame_OpenToCategory and _G["BuffPowerOptionsPanel"] then -- Fallback
-             InterfaceOptionsFrame_OpenToCategory(_G["BuffPowerOptionsPanel"].name or "BuffPower")
+        -- Classic Era & hard fallback: always shows standalone options window
+        if BuffPower and BuffPower.ShowStandaloneOptions then
+            BuffPower:ShowStandaloneOptions()
         else
-            DEFAULT_CHAT_FRAME:AddMessage("BuffPower: Options panel not available or not fully initialized.")
-            DebugPrint("BuffPower: Config attempt. InterfaceOptionsFrame_OpenToCategory:", InterfaceOptionsFrame_OpenToCategory, "Panel to show:", panelToShow, "BuffPower.optionsPanelName:", BuffPower.optionsPanelName)
+            DEFAULT_CHAT_FRAME:AddMessage("BuffPower: Standalone options are not available or not fully initialized.")
         end
     elseif input == "reset" then
         if BuffPower.defaults and BuffPower.deepcopy then

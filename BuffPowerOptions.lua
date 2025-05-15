@@ -1,7 +1,7 @@
 -- BuffPowerOptions.lua
 -- Configuration options for BuffPower
 
-local L = BuffPower.L -- Localization
+local L = BuffPower.L or setmetatable({}, {__index=function(t,k) return k end}) -- Robust Localization fallback
 
 function BuffPower:CreateOptionsPanel()
     local panel = CreateFrame("Frame", "BuffPowerOptionsPanel")
@@ -42,6 +42,54 @@ function BuffPower:CreateOptionsPanel()
         end
     end)
     yOffset = yOffset - 30
+-- Extra Buff Options section (dynamic/optional buffs)
+    local extraBuffLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    extraBuffLabel:SetPoint("TOPLEFT", 20, yOffset)
+    extraBuffLabel:SetText("Buff Options")
+    yOffset = yOffset - 20
+
+    -- Ensure BuffPowerDB.buffEnableOptions exists & has defaults for optional buffs
+    if not BuffPowerDB.buffEnableOptions then BuffPowerDB.buffEnableOptions = {} end
+    if BuffPower.BuffTypes then
+        for key, info in pairs(BuffPower.BuffTypes) do
+            if info.is_optional and BuffPowerDB.buffEnableOptions[key] == nil then
+                BuffPowerDB.buffEnableOptions[key] = true
+            end
+            -- Enable Spirit by default for priests if it exists
+            if key == "SPIRIT" and BuffPowerDB.buffEnableOptions[key] == nil then
+                BuffPowerDB.buffEnableOptions[key] = true
+            end
+        end
+    end
+
+    -- Helper for creating a buff enable checkbox
+    local function createBuffEnableCheckbox(buffKey, label, parent, y)
+        local enable = true
+        if BuffPowerDB and BuffPowerDB.buffEnableOptions and BuffPowerDB.buffEnableOptions[buffKey] ~= nil then
+            enable = BuffPowerDB.buffEnableOptions[buffKey]
+        end
+        local cb = CreateFrame("CheckButton", "BuffPowerBuffEnable"..buffKey.."Checkbox", parent, "UICheckButtonTemplate")
+        cb:SetPoint("TOPLEFT", 30, y)
+        getglobal(cb:GetName() .. "Text"):SetText("Enable " .. label)
+        cb:SetChecked(enable)
+        cb:SetScript("OnClick", function(self)
+            if not BuffPowerDB.buffEnableOptions then BuffPowerDB.buffEnableOptions = {} end
+            BuffPowerDB.buffEnableOptions[buffKey] = self:GetChecked() and true or false
+            if BuffPower and BuffPower.UpdateUI then BuffPower:UpdateUI() end
+        end)
+    end
+
+    -- Add checkboxes for optional buffs
+    local optionYOffset = yOffset
+    if BuffPower.BuffTypes then
+        for key, info in pairs(BuffPower.BuffTypes) do
+            if info.is_optional or key == "SPIRIT" then
+                createBuffEnableCheckbox(key, info.name, panel, optionYOffset)
+                optionYOffset = optionYOffset - 25
+            end
+        end
+    end
+    yOffset = optionYOffset - 10
 
     -- Checkbox: Show Window
     local showWindowCheckbox = CreateFrame("CheckButton", "BuffPowerShowWindowCheckbox", panel, "UICheckButtonTemplate")
@@ -279,8 +327,7 @@ function BuffPower:CreateOptionsPanel()
 
 
     -- Add the panel to the Interface Options
-    InterfaceOptions_AddCategory(panel)
-    -- DEFAULT_CHAT_FRAME:AddMessage("BuffPowerOptions.lua: Panel registered.") -- For debugging
+    -- Blizzard options registration disabled: handled by standalone window (BuffPowerOptionsWindow.lua)
 end
 
 --[[

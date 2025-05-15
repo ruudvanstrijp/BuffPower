@@ -33,6 +33,95 @@ BuffPower.ClassColors = {
     ["DRUID"]  = { r = 1.0,  g = 0.49, b = 0.04, hex = "|cffFF7D0A" },
 }
 
+-- -[[
+--  BuffPower.BuffTypes = {
+--      [buff_key] = {
+--          name = "Display Name",
+--          buffer_class = "CLASS",
+--          group_spell_name = "...", group_spell_id = ...,
+--          single_spell_name = "...", single_spell_id = ...,
+--          icon = "...",
+--          eligible_target_classes = {...},
+--          is_optional = true/false,
+--          requires_talent = true/false, -- For priest Spirit only
+--      }
+--  }
+--]]
+
+BuffPower.BuffTypes = {
+    FORTITUDE = {
+        name = "Power Word: Fortitude",
+        buffer_class = "PRIEST",
+        group_spell_name = "Prayer of Fortitude",
+        group_spell_id = 21564,
+        single_spell_name = "Power Word: Fortitude",
+        single_spell_id = 10938,
+        icon = "Interface\\Icons\\Spell_Holy_WordFortitude",
+        eligible_target_classes = { "WARRIOR", "PALADIN", "DRUID", "SHAMAN", "PRIEST", "MAGE", "HUNTER", "WARLOCK", "ROGUE" },
+        is_optional = false,
+        requires_talent = false,
+    },
+    SPIRIT = {
+        name = "Divine Spirit",
+        buffer_class = "PRIEST",
+        group_spell_name = "Prayer of Spirit",
+        group_spell_id = 25312,
+        single_spell_name = "Divine Spirit",
+        single_spell_id = 25312,
+        icon = "Interface\\Icons\\Spell_Holy_DivineSpirit",
+        eligible_target_classes = { "PRIEST", "MAGE", "WARLOCK", "DRUID", "SHAMAN", "HUNTER", "PALADIN" }, -- Not WARRIOR/ROGUE
+        is_optional = false,
+        requires_talent = true,
+    },
+    SHADOW = {
+        name = "Shadow Protection",
+        buffer_class = "PRIEST",
+        group_spell_name = "Prayer of Shadow Protection",
+        group_spell_id = 27683,
+        single_spell_name = "Shadow Protection",
+        single_spell_id = 10958,
+        icon = "Interface\\Icons\\Spell_Shadow_AntiShadow",
+        eligible_target_classes = { "PRIEST", "MAGE", "WARLOCK", "DRUID", "SHAMAN", "HUNTER", "PALADIN", "ROGUE", "WARRIOR" },
+        is_optional = true,
+        requires_talent = false,
+    },
+    ARCANE_INTELLECT = {
+        name = "Arcane Intellect",
+        buffer_class = "MAGE",
+        group_spell_name = "Arcane Brilliance",
+        group_spell_id = 23028,
+        single_spell_name = "Arcane Intellect",
+        single_spell_id = 10157,
+        icon = "Interface\\Icons\\Spell_Holy_ArcaneIntellect",
+        eligible_target_classes = { "PRIEST", "MAGE", "WARLOCK", "DRUID", "SHAMAN", "HUNTER", "PALADIN" }, -- Not WARRIOR/ROGUE
+        is_optional = false,
+        requires_talent = false,
+    },
+    MARK_OF_WILD = {
+        name = "Mark of the Wild",
+        buffer_class = "DRUID",
+        group_spell_name = "Gift of the Wild",
+        group_spell_id = 21850,
+        single_spell_name = "Mark of the Wild",
+        single_spell_id = 9885,
+        icon = "Interface\\Icons\\Spell_Nature_Regeneration",
+        eligible_target_classes = { "PRIEST", "MAGE", "WARLOCK", "DRUID", "SHAMAN", "HUNTER", "PALADIN", "WARRIOR", "ROGUE" },
+        is_optional = false,
+        requires_talent = false,
+    },
+    THORNS = {
+        name = "Thorns",
+        buffer_class = "DRUID",
+        group_spell_name = nil, -- No group version
+        group_spell_id = nil,
+        single_spell_name = "Thorns",
+        single_spell_id = 9910,
+        icon = "Interface\\Icons\\Spell_Nature_Thorns",
+        eligible_target_classes = { "DRUID", "WARRIOR", "PALADIN" }, -- Tanky
+        is_optional = true,
+        requires_talent = false,
+    }
+}
 -- Icons for classes (example paths, replace with actual .tga or .blp)
 BuffPower.ClassIcons = {
     ["MAGE"]   = "Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES_MAGE",
