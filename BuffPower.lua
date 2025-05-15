@@ -29,6 +29,17 @@ local L = LibStub("AceLocale-3.0"):GetLocale(addonName)
 
 -- Constants
 local MAX_RAID_MEMBERS = 40
+-- Returns true if bufferClass should buff memberClass using their main buff
+function BuffPower:NeedsBuffFrom(bufferClass, memberClass)
+    bufferClass = bufferClass and bufferClass:upper()
+    memberClass = memberClass and memberClass:upper()
+    if bufferClass == "MAGE" then
+        return memberClass ~= "WARRIOR" and memberClass ~= "ROGUE"
+    elseif bufferClass == "PRIEST" or bufferClass == "DRUID" then
+        return true
+    end
+    return false
+end
 local MAX_PARTY_MEMBERS = 5
 local MAX_RAID_GROUPS = 8
 
@@ -92,14 +103,18 @@ local function CreateOrResetGroupMemberFrame()
 end
 
 -- Helper: Update all per-button visual/logic; called by Populator and by ticker
-local function UpdateMemberButtonAppearance(btn, member, buffInfo, playerClass)
+local function UpdateMemberButtonAppearance(btn, member, buffInfo, bufferClass)
     local classColorHex = (BuffPower.ClassColors and BuffPower.ClassColors[member.class] and BuffPower.ClassColors[member.class].hex) or "|cffffffff"
-    local needsBuff = true
-    if buffInfo and member.unitid then
-        needsBuff = not BuffPower:GetUnitBuffState(member.unitid, playerClass)
+    -- Determine if this member is a target for this group's bufferClass
+    local needsThisBuff = BuffPower:NeedsBuffFrom(bufferClass, member.class)
+    local needsBuff = false
+    if buffInfo and member.unitid and needsThisBuff then
+        needsBuff = not BuffPower:GetUnitBuffState(member.unitid, bufferClass)
     end
     local color
-    if needsBuff then
+    if not needsThisBuff then
+        color = { r = 0.5, g = 0.5, b = 0.5 }
+    elseif needsBuff then
         color = { r = 1, g = 0.2, b = 0.2 }
     else
         color = { r = 0.2, g = 1, b = 0.2 }
@@ -115,13 +130,20 @@ local function UpdateMemberButtonAppearance(btn, member, buffInfo, playerClass)
         btn.bg = btn:CreateTexture(nil, "BACKGROUND")
         btn.bg:SetAllPoints()
     end
-    if needsBuff then
+    if not needsThisBuff then
+        btn.bg:SetColorTexture(0.5,0.5,0.5, 0.5)
+    elseif needsBuff then
         btn.bg:SetColorTexture(1, 0.2, 0.2, 0.5)
     else
         btn.bg:SetColorTexture(0.2, 1, 0.2, 0.5)
     end
     -- Tooltip/secure
-    if buffInfo then
+    if not needsThisBuff then
+        btn.tooltip = "No buff needed"
+        btn:SetAttribute("type", nil)
+        btn:SetAttribute("spell", nil)
+        btn:SetAttribute("unit", nil)
+    elseif buffInfo then
         btn:SetAttribute("type", "spell")
         btn:SetAttribute("spell", buffInfo.single_spell_name)
         if member.unitid then
@@ -131,7 +153,7 @@ local function UpdateMemberButtonAppearance(btn, member, buffInfo, playerClass)
         end
         btn.tooltip = (needsBuff and "|cffff3333Needs buff! " or "|cff33ff33Buffed. ") .. "Click to buff "..member.name.." with "..buffInfo.single_spell_name
     else
-        btn.tooltip = "Cannot find buff for class "..tostring(playerClass)
+        btn.tooltip = "Cannot find buff for class "..tostring(bufferClass)
         btn:SetAttribute("type", nil)
         btn:SetAttribute("spell", nil)
         btn:SetAttribute("unit", nil)
@@ -420,25 +442,48 @@ function BuffPower:IsGroupMissingBuff(groupId)
     local members = self:GetGroupMembers(groupId)
     if #members == 0 then return true end -- treat empty group as "unbuffed"
 
-    -- Only consider eligible buffer classes for group status
+    -- Determine the buffer class (assignment, fallback logic as in timer function)
+    -- (Aim: match group bar coloring to what assignment/group is for)
+    local assignment = (BuffPowerDB and BuffPowerDB.assignments) and BuffPowerDB.assignments[groupId]
+    local groupBuffClass
+    if assignment and assignment.playerClass then
+        groupBuffClass = assignment.playerClass
+    else
+        local numGroupMembers = GetNumGroupMembers() or 0
+        local _, playerClass = UnitClass("player")
+        if playerClass == "MAGE" or playerClass == "PRIEST" or playerClass == "DRUID" then
+            groupBuffClass = playerClass
+        elseif numGroupMembers == 0 or (not IsInRaid() and groupId == 1) then
+            groupBuffClass = playerClass
+        elseif IsInRaid() then
+            -- Fallback: raid, use first eligible buffer class in group
+            for _, member in ipairs(members) do
+                if member.class == "MAGE" or member.class == "PRIEST" or member.class == "DRUID" then
+                    groupBuffClass = member.class
+                    break
+                end
+            end
+        end
+    end
+
+    if not groupBuffClass then return true end
+
     local classBuffInfos = self.ClassBuffInfo or {}
     local eligibleCount = 0
     for _, member in ipairs(members) do
-        local buffTypes = classBuffInfos[member.class]
-        if buffTypes then
+        -- Only require buff if this class should get it from this buffer
+        if self:NeedsBuffFrom(groupBuffClass, member.class) and classBuffInfos[groupBuffClass] then
             eligibleCount = eligibleCount + 1
             if self:IsUnitMissingBuff(
                 member.unitid, member.class,
-                buffTypes.group_spell_id, buffTypes.single_spell_id
+                classBuffInfos[groupBuffClass].group_spell_id, classBuffInfos[groupBuffClass].single_spell_id
             ) then
-                return true -- found an eligible unbuffed member
+                return true -- eligible, but missing
             end
         end
-        -- if class not supported, skip
     end
-    -- If there were no eligible members, group is "not buffed" (keep red/grey)
-    if eligibleCount == 0 then return true end
-    return false -- all eligible buffer-targets are buffed
+    if eligibleCount == 0 then return "grey" end
+    return false -- all eligible buffer-targets buffed for group type
 end
 
 -- Enhancement Plan: Returns shortest remaining group buff duration for the group (seconds)
@@ -1050,7 +1095,11 @@ function BuffPower:UpdateGroupButtonContent(button, groupId)
     -- Enhancement Plan: Group color/status logic
     local missingBuff = self:IsGroupMissingBuff(groupId)
     local color = (self.db and self.db.colors) or BuffPower.defaults.profile.colors
-    if missingBuff then
+    if missingBuff == "grey" then
+        if button.bg then
+            button.bg:SetColorTexture(0.5, 0.5, 0.5, 0.5)
+        end
+    elseif missingBuff then
         if button.bg then
             button.bg:SetColorTexture(unpack((color and color.groupMissingBuff) or {0.8, 0.2, 0.2, 0.7}))
         end
