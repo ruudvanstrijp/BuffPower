@@ -274,7 +274,7 @@ local function UpdateMemberButtonAppearance(btn, member, buffInfo, bufferClass)
             iconBtn.texture:SetVertexColor(1, 0.2, 0.2, 1) -- Red
             table.insert(tooltipLines, "|cffFF4040"..buff.name.."|r: |cffff3333Missing|r")
         else
-            iconBtn.texture:SetVertexColor(0.7,1,0.7, 0.9)
+            iconBtn.texture:SetVertexColor(1,1,1,1)
             table.insert(tooltipLines, "|cffA0FFA0"..buff.name.."|r: |cff33ff33Buffed|r "..(timerText or ""))
         end
 
@@ -433,7 +433,8 @@ local function PopulateGroupMemberButtons(anchorButton, members, buffInfo, playe
         btn:SetParent(BuffPowerGroupMemberFrame)
         btn:SetSize(buttonWidth, buttonHeight)
         btn:ClearAllPoints()
-        btn:EnableMouse(true)
+        -- Only the icon buttons should be mouse-enabled; background area should not absorb clicks or trigger OnClick/OnMouseDown
+        btn:EnableMouse(false)
         if idx == 1 then
             btn:SetPoint("TOPLEFT", BuffPowerGroupMemberFrame, "TOPLEFT", 0, 0)
         else
@@ -1187,10 +1188,13 @@ function BuffPower:CreateUI()
                 if BuffPowerGroupMemberFrame then
                     BuffPowerGroupMemberFrame._popoutShowId = (BuffPowerGroupMemberFrame._popoutShowId or 0) + 1
                     local myShowId = BuffPowerGroupMemberFrame._popoutShowId
-                    C_Timer.After(0.15, function()
+                    C_Timer.After(0.25, function()
                         if BuffPowerGroupMemberFrame and BuffPowerGroupMemberFrame:IsShown() and BuffPowerGroupMemberFrame._popoutShowId == myShowId then
                             if not self_button:IsMouseOver() and not BuffPowerGroupMemberFrame:IsMouseOver() then
-                                BuffPowerGroupMemberFrame:Hide()
+                                -- Only hide if we're not in the click lock-out period
+                                if not BuffPower._popoverLockUntil or GetTime() > BuffPower._popoverLockUntil then
+                                    BuffPowerGroupMemberFrame:Hide()
+                                end
                             end
                         end
                     end)
@@ -1469,10 +1473,13 @@ function BuffPower:UpdateGroupButtonContent(button, groupId)
             if BuffPowerGroupMemberFrame then
                 BuffPowerGroupMemberFrame._popoutShowId = (BuffPowerGroupMemberFrame._popoutShowId or 0) + 1
                 local myShowId = BuffPowerGroupMemberFrame._popoutShowId
-                C_Timer.After(0.15, function()
+                C_Timer.After(0.25, function()
                     if BuffPowerGroupMemberFrame and BuffPowerGroupMemberFrame:IsShown() and BuffPowerGroupMemberFrame._popoutShowId == myShowId then
                         if not self:IsMouseOver() and not parentGroupBtn:IsMouseOver() and not BuffPowerGroupMemberFrame:IsMouseOver() then
-                            BuffPowerGroupMemberFrame:Hide()
+                            -- Only hide if we're not in the click lock-out period
+                            if not BuffPower._popoverLockUntil or GetTime() > BuffPower._popoverLockUntil then
+                                BuffPowerGroupMemberFrame:Hide()
+                            end
                         end
                     end
                 end)
@@ -1480,6 +1487,8 @@ function BuffPower:UpdateGroupButtonContent(button, groupId)
         end)
 
         iconBtn:SetScript("PostClick", function(selfB)
+            -- "Lock" the popout open briefly after click to avoid hiding before SecureActionButton fires
+            BuffPower._popoverLockUntil = GetTime() + 0.25
             C_Timer.After(0.6, function()
                 if BuffPower and BuffPower.UpdateRoster then
                     BuffPower:UpdateRoster()
