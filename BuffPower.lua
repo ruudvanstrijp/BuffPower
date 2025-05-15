@@ -399,8 +399,6 @@ local function PopulateGroupMemberButtons(anchorButton, members, buffInfo, playe
     end
     BuffPowerGroupMemberFrame:Show()
     BuffPowerGroupMemberFrame:ClearAllPoints()
-    -- Anchor to the group button for now—refine if desired
-    BuffPowerGroupMemberFrame:SetPoint("LEFT", anchorButton, "RIGHT", 8, 0)
 
     local displayConfig = (BuffPower.db and BuffPower.db.profile and BuffPower.db.profile.display) or (BuffPower.defaults and BuffPower.defaults.profile and BuffPower.defaults.profile.display) or {}
     local buttonWidth = (displayConfig.buttonWidth ~= nil) and displayConfig.buttonWidth or 160
@@ -409,10 +407,13 @@ local function PopulateGroupMemberButtons(anchorButton, members, buffInfo, playe
 
     local totalButtons = #members
     local popupWidth = buttonWidth
-    local topPad = 14
+    -- Remove extra padding so alignment matches historical direct-parenting
+    local topPad = 0
     local bottomPad = 2
-    local popupHeight = topPad + totalButtons * buttonHeight + (totalButtons - 1) * verticalSpacing + bottomPad
+    local popupHeight = totalButtons * buttonHeight + (totalButtons - 1) * verticalSpacing + bottomPad
     BuffPowerGroupMemberFrame:SetSize(popupWidth, popupHeight)
+    -- Align the first member button's TOP with the anchor group button's TOP
+    BuffPowerGroupMemberFrame:SetPoint("TOPLEFT", anchorButton, "TOPRIGHT", 8, 0)
     -- Add invisible background to catch OnLeave between/above/below buttons
     if not BuffPowerGroupMemberFrame.bg then
         BuffPowerGroupMemberFrame.bg = BuffPowerGroupMemberFrame:CreateTexture(nil, "BACKGROUND")
@@ -434,7 +435,7 @@ local function PopulateGroupMemberButtons(anchorButton, members, buffInfo, playe
         btn:ClearAllPoints()
         btn:EnableMouse(true)
         if idx == 1 then
-            btn:SetPoint("TOPLEFT", BuffPowerGroupMemberFrame, "TOPLEFT", 0, -topPad)
+            btn:SetPoint("TOPLEFT", BuffPowerGroupMemberFrame, "TOPLEFT", 0, 0)
         else
             local prevBtn = _G["BuffPowerGroupMemberButton" .. (idx-1)]
             btn:SetPoint("TOPLEFT", prevBtn, "BOTTOMLEFT", 0, -verticalSpacing)
@@ -1452,6 +1453,8 @@ function BuffPower:UpdateGroupButtonContent(button, groupId)
         
         -- Tooltip: show info about the group buff
         iconBtn:SetScript("OnEnter", function(self)
+            -- Show the player popout as if we hovered the parent group button
+            BuffPower_ShowGroupMemberFrame(self:GetParent(), self:GetParent().groupID)
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:SetText(buff.group_spell_name)
             if buff.group_spell_id then
@@ -1460,7 +1463,21 @@ function BuffPower:UpdateGroupButtonContent(button, groupId)
             GameTooltip:AddLine(buff.name, 1, 1, 1)
             GameTooltip:Show()
         end)
-        iconBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        iconBtn:SetScript("OnLeave", function(self)
+            GameTooltip:Hide()
+            local parentGroupBtn = self:GetParent()
+            if BuffPowerGroupMemberFrame then
+                BuffPowerGroupMemberFrame._popoutShowId = (BuffPowerGroupMemberFrame._popoutShowId or 0) + 1
+                local myShowId = BuffPowerGroupMemberFrame._popoutShowId
+                C_Timer.After(0.15, function()
+                    if BuffPowerGroupMemberFrame and BuffPowerGroupMemberFrame:IsShown() and BuffPowerGroupMemberFrame._popoutShowId == myShowId then
+                        if not self:IsMouseOver() and not parentGroupBtn:IsMouseOver() and not BuffPowerGroupMemberFrame:IsMouseOver() then
+                            BuffPowerGroupMemberFrame:Hide()
+                        end
+                    end
+                end)
+            end
+        end)
 
         iconBtn:SetScript("PostClick", function(selfB)
             C_Timer.After(0.6, function()
