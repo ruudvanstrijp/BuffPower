@@ -132,6 +132,79 @@ function BuffPower:CreateOptionsPanel()
     end)
     yOffset = yOffset - 40
 
+    -- === Enhancement: Group Button Layout Sliders ===
+    yOffset = yOffset - 10
+    local display = BuffPowerDB and BuffPowerDB.display or BuffPower.defaults.profile.display
+
+    -- Button Width Slider
+    local buttonWidthLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    buttonWidthLabel:SetPoint("TOPLEFT", 30, yOffset)
+    local currButtonWidth = (display and display.buttonWidth) or 120
+    buttonWidthLabel:SetText("Group Button Width: " .. currButtonWidth)
+    yOffset = yOffset - 25
+    local buttonWidthSlider = CreateFrame("Slider", "BuffPowerButtonWidthSlider", panel, "OptionsSliderTemplate")
+    buttonWidthSlider:SetPoint("TOPLEFT", 30, yOffset)
+    buttonWidthSlider:SetWidth(160)
+    buttonWidthSlider:SetMinMaxValues(60, 280)
+    buttonWidthSlider:SetValueStep(2)
+    buttonWidthSlider:SetValue(currButtonWidth)
+    _G[buttonWidthSlider:GetName() .. "Low"]:SetText("60")
+    _G[buttonWidthSlider:GetName() .. "High"]:SetText("280")
+    _G[buttonWidthSlider:GetName() .. "Text"]:SetText("Button Width")
+    buttonWidthSlider:SetScript("OnValueChanged", function(self, value)
+        if not BuffPowerDB.display then BuffPowerDB.display = {} end
+        BuffPowerDB.display.buttonWidth = value
+        buttonWidthLabel:SetText("Group Button Width: " .. value)
+        if BuffPower and BuffPower.UpdateUI then BuffPower:UpdateUI() end
+    end)
+    yOffset = yOffset - 40
+
+    -- Button Height Slider
+    local buttonHeightLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    buttonHeightLabel:SetPoint("TOPLEFT", 30, yOffset)
+    local currButtonHeight = (display and display.buttonHeight) or 28
+    buttonHeightLabel:SetText("Group Button Height: " .. currButtonHeight)
+    yOffset = yOffset - 25
+    local buttonHeightSlider = CreateFrame("Slider", "BuffPowerButtonHeightSlider", panel, "OptionsSliderTemplate")
+    buttonHeightSlider:SetPoint("TOPLEFT", 30, yOffset)
+    buttonHeightSlider:SetWidth(160)
+    buttonHeightSlider:SetMinMaxValues(16, 60)
+    buttonHeightSlider:SetValueStep(1)
+    buttonHeightSlider:SetValue(currButtonHeight)
+    _G[buttonHeightSlider:GetName() .. "Low"]:SetText("16")
+    _G[buttonHeightSlider:GetName() .. "High"]:SetText("60")
+    _G[buttonHeightSlider:GetName() .. "Text"]:SetText("Button Height")
+    buttonHeightSlider:SetScript("OnValueChanged", function(self, value)
+        if not BuffPowerDB.display then BuffPowerDB.display = {} end
+        BuffPowerDB.display.buttonHeight = value
+        buttonHeightLabel:SetText("Group Button Height: " .. value)
+        if BuffPower and BuffPower.UpdateUI then BuffPower:UpdateUI() end
+    end)
+    yOffset = yOffset - 40
+
+    -- Button Spacing Slider
+    local buttonSpacingLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    buttonSpacingLabel:SetPoint("TOPLEFT", 30, yOffset)
+    local currSpacing = (display and display.buttonSpacing) or 2
+    buttonSpacingLabel:SetText("Group Button Spacing: " .. currSpacing)
+    yOffset = yOffset - 25
+    local buttonSpacingSlider = CreateFrame("Slider", "BuffPowerButtonSpacingSlider", panel, "OptionsSliderTemplate")
+    buttonSpacingSlider:SetPoint("TOPLEFT", 30, yOffset)
+    buttonSpacingSlider:SetWidth(160)
+    buttonSpacingSlider:SetMinMaxValues(0, 20)
+    buttonSpacingSlider:SetValueStep(1)
+    buttonSpacingSlider:SetValue(currSpacing)
+    _G[buttonSpacingSlider:GetName() .. "Low"]:SetText("0")
+    _G[buttonSpacingSlider:GetName() .. "High"]:SetText("20")
+    _G[buttonSpacingSlider:GetName() .. "Text"]:SetText("Button Spacing")
+    buttonSpacingSlider:SetScript("OnValueChanged", function(self, value)
+        if not BuffPowerDB.display then BuffPowerDB.display = {} end
+        BuffPowerDB.display.buttonSpacing = value
+        buttonSpacingLabel:SetText("Group Button Spacing: " .. value)
+        if BuffPower and BuffPower.UpdateUI then BuffPower:UpdateUI() end
+    end)
+    yOffset = yOffset - 40
+
     -- Class Enable/Disable Settings
     yOffset = yOffset - 20
     local classSettingsLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")

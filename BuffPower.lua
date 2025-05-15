@@ -2,6 +2,11 @@
 -- Core logic for BuffPower addon
 
 local addonName = "BuffPower"
+-- For accurate raid-wide buff tracking (like PallyPower), use LibClassicDurations if available
+local LCD = LibStub("LibClassicDurations", true)
+local UnitAura = LCD and LCD.UnitAuraWrapper or _G.UnitAura
+if LCD then _G.UnitAura = LCD.UnitAuraWrapper end
+if LCD then LCD:Register(addonName) end
 
 -- Attempt to get AceAddon-3.0
 local AceAddon = LibStub("AceAddon-3.0")
@@ -393,6 +398,103 @@ function BuffPower:GetGroupMembers(groupId)
     return members
 end
 
+-- Enhancement Plan: Returns true if unitId is missing the specified group buff
+function BuffPower:IsUnitMissingBuff(unitId, class, groupBuffSpellId, singleBuffSpellId)
+    if not unitId or not class or not groupBuffSpellId then return true end
+    local groupName = GetSpellInfo and GetSpellInfo(groupBuffSpellId) or groupBuffSpellId
+    local singleName = singleBuffSpellId and (GetSpellInfo(singleBuffSpellId) or singleBuffSpellId) or nil
+    local i = 1
+    while true do
+        local name, _, _, _, _, _, _, _, _, spellId = UnitAura(unitId, i, "HELPFUL")
+        if not name then break end
+        if (spellId == groupBuffSpellId or name == groupName) or (singleBuffSpellId and (spellId == singleBuffSpellId or name == singleName)) then
+            return false -- Has the group or single buff
+        end
+        i = i + 1
+    end
+    return true -- Missing both
+end
+
+-- Enhancement Plan: Returns true if any valid member of the group is missing the group buff
+function BuffPower:IsGroupMissingBuff(groupId)
+    local members = self:GetGroupMembers(groupId)
+    if #members == 0 then return true end -- treat empty group as "unbuffed"
+
+    -- Only consider eligible buffer classes for group status
+    local classBuffInfos = self.ClassBuffInfo or {}
+    local eligibleCount = 0
+    for _, member in ipairs(members) do
+        local buffTypes = classBuffInfos[member.class]
+        if buffTypes then
+            eligibleCount = eligibleCount + 1
+            if self:IsUnitMissingBuff(
+                member.unitid, member.class,
+                buffTypes.group_spell_id, buffTypes.single_spell_id
+            ) then
+                return true -- found an eligible unbuffed member
+            end
+        end
+        -- if class not supported, skip
+    end
+    -- If there were no eligible members, group is "not buffed" (keep red/grey)
+    if eligibleCount == 0 then return true end
+    return false -- all eligible buffer-targets are buffed
+end
+
+-- Enhancement Plan: Returns shortest remaining group buff duration for the group (seconds)
+function BuffPower:GetShortestGroupBuffDuration(groupId)
+    local members = self:GetGroupMembers(groupId)
+    -- Prefer assignment, fallback to player class in solo/party if no assignment
+    local assignment = (BuffPowerDB and BuffPowerDB.assignments) and BuffPowerDB.assignments[groupId]
+    local groupBuffClass
+    if assignment and assignment.playerClass then
+        groupBuffClass = assignment.playerClass
+    else
+        local numGroupMembers = GetNumGroupMembers() or 0
+        if numGroupMembers == 0 or (not IsInRaid() and groupId == 1) then
+            local _, playerClass = UnitClass("player")
+            groupBuffClass = playerClass
+        elseif IsInRaid() then
+            -- Fallback: raid, use first eligible buffer class in group
+            for _, member in ipairs(members) do
+                if member.class == "MAGE" or member.class == "PRIEST" or member.class == "DRUID" then
+                    groupBuffClass = member.class
+                    break
+                end
+            end
+        end
+    end
+    local buffInfo = (groupBuffClass and self.ClassBuffInfo) and self.ClassBuffInfo[groupBuffClass] or nil
+    if not buffInfo then return nil end
+    local groupSpellId = buffInfo.group_spell_id
+    local singleSpellId = buffInfo.single_spell_id
+    if not groupSpellId then return nil end
+
+    local minDuration = nil
+    for _, member in ipairs(members) do
+        local foundBuff = false
+        local i = 1
+        while true do
+            local name, _, _, _, _, _, expirationTime, _, _, auraSpellId = UnitAura(member.unitid, i, "HELPFUL")
+            if not name then break end
+            if (auraSpellId == groupSpellId or (singleSpellId and auraSpellId == singleSpellId)) then
+                if expirationTime and expirationTime > 0 then
+                    local remaining = expirationTime - GetTime()
+                    if remaining > 0 then
+                        if not minDuration or remaining < minDuration then
+                            minDuration = remaining
+                        end
+                        foundBuff = true
+                        break -- found a valid buff, don't need to check more
+                    end
+                end
+            end
+            i = i + 1
+        end
+    end
+    return minDuration -- may be nil if no group/single buff found
+end
+
 function BuffPower:GetEligibleBuffers()
     local buffers = {}
     for _, p_info in ipairs(BuffPower.Roster) do
@@ -694,51 +796,64 @@ function BuffPower:CreateUI()
     -- Create Group Buttons if they don't exist
     for i = 1, MAX_RAID_GROUPS do
         if not BuffPowerGroupButtons[i] then
+            local displayConfig = (BuffPower.db and BuffPower.db.profile and BuffPower.db.profile.display) or BuffPower.defaults.profile.display
+            local buttonWidth = (displayConfig and displayConfig.buttonWidth) or 120
+            local buttonHeight = (displayConfig and displayConfig.buttonHeight) or 28
+            local fontFace = (displayConfig and displayConfig.fontFace) or "GameFontNormalSmall"
+            local fontSize = (displayConfig and displayConfig.fontSize) or 12
+            local timerFontSize = (displayConfig and displayConfig.timerFontSize) or 12
+            local borderColor = (displayConfig and displayConfig.borderColor) or {0.1, 0.1, 0.1, 1}
+            local borderTexture = (displayConfig and displayConfig.borderTexture) or "Interface\\ChatFrame\\ChatFrameBackground"
+            local edgeSize = (displayConfig and displayConfig.edgeSize) or 1
+            local backgroundColor = (displayConfig and displayConfig.backgroundColor) or {0.1, 0.1, 0.1, 0.7}
+            local fontColor = (displayConfig and displayConfig.fontColor) or {1,1,1,1}
+
             local groupButton = CreateFrame("Button", "BuffPowerGroupButton" .. i, BuffPowerOrbFrame.container, "SecureActionButtonTemplate")
-            groupButton:SetSize(120, 22) -- Match member cell size for visual consistency
+            groupButton:SetSize(buttonWidth, buttonHeight)
             groupButton.groupID = i
-            
+
             -- Create a colored background texture
             groupButton.bg = groupButton:CreateTexture(nil, "BACKGROUND")
             groupButton.bg:SetAllPoints()
-            groupButton.bg:SetColorTexture(0.1, 0.1, 0.1, 0.7) -- Dark background            -- Add a border
+            groupButton.bg:SetColorTexture(unpack(backgroundColor)) -- Sleek dark/fallback background
+
             groupButton.border = CreateFrame("Frame", nil, groupButton)
-            -- Prevent it from blocking mouse events
             groupButton.border:SetFrameLevel(groupButton:GetFrameLevel() - 1)
-            -- Apply BackdropTemplate if available
             if BackdropTemplateMixin then
                 Mixin(groupButton.border, BackdropTemplateMixin)
             end
             groupButton.border:SetPoint("TOPLEFT", groupButton, "TOPLEFT", -1, 1)
             groupButton.border:SetPoint("BOTTOMRIGHT", groupButton, "BOTTOMRIGHT", 1, -1)
-            
+
             local borderBackdropInfo = {
-                edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-                edgeSize = 8,
+                edgeFile = borderTexture,
+                edgeSize = edgeSize,
                 insets = {left = 0, right = 0, top = 0, bottom = 0}
             }
-            
             if groupButton.border.SetBackdrop then
                 groupButton.border:SetBackdrop(borderBackdropInfo)
-                groupButton.border:SetBackdropBorderColor(0.6, 0.6, 0.6, 0.8)
+                groupButton.border:SetBackdropBorderColor(unpack(borderColor))
             end
-            
+
             -- Class icon on left
             groupButton.icon = groupButton:CreateTexture(nil, "ARTWORK")
-            groupButton.icon:SetSize(20, 20)
+            groupButton.icon:SetSize(buttonHeight-4, buttonHeight-4)
             groupButton.icon:SetPoint("LEFT", 4, 0)
-            groupButton.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93) -- Trim the icon edges
-            
+            groupButton.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+
             -- Timer text on right (for buff duration)
-            groupButton.time = groupButton:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+            groupButton.time = groupButton:CreateFontString(nil, "ARTWORK", fontFace)
             groupButton.time:SetPoint("RIGHT", -4, 0)
             groupButton.time:SetText("")
-            
+            if fontSize and groupButton.time.SetFont then groupButton.time:SetFont(GameFontNormal:GetFont(), timerFontSize) end
+
             -- Group text in center
-            groupButton.text = groupButton:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+            groupButton.text = groupButton:CreateFontString(nil, "ARTWORK", fontFace)
             groupButton.text:SetPoint("LEFT", groupButton.icon, "RIGHT", 4, 0)
             groupButton.text:SetPoint("RIGHT", groupButton.time, "LEFT", -2, 0)
             groupButton.text:SetJustifyH("LEFT")
+            if fontSize and groupButton.text.SetFont then groupButton.text:SetFont(GameFontNormal:GetFont(), fontSize) end
+            if fontColor then groupButton.text:SetTextColor(unpack(fontColor)) end
             
             -- SecureActionButton: Assign group buff spell to button click for this group
             local _, playerClass = UnitClass("player")
@@ -923,65 +1038,75 @@ function BuffPower:UpdateGroupButtonContent(button, groupId)
     local membersInGroup = BuffPower:GetGroupMembers(groupId)
     local numGroupMembers = #membersInGroup
     local groupText = string.format("G%d", groupId) -- Shorter format like PallyPower
-    
+
     -- Set button state
     button:Enable()
-    
+
     -- Empty group handling
     if numGroupMembers == 0 then
         if not (IsInRaid() or IsInGroup()) and groupId > 1 then button:Disable() end
     end
-    
-    -- Reset appearance
-    button.bg:SetColorTexture(0.1, 0.1, 0.1, 0.7) -- Default dark background
-    button.time:SetText("") -- Clear timer text
-    
+
+    -- Enhancement Plan: Group color/status logic
+    local missingBuff = self:IsGroupMissingBuff(groupId)
+    local color = (self.db and self.db.colors) or BuffPower.defaults.profile.colors
+    if missingBuff then
+        if button.bg then
+            button.bg:SetColorTexture(unpack((color and color.groupMissingBuff) or {0.8, 0.2, 0.2, 0.7}))
+        end
+    else
+        if button.bg then
+            button.bg:SetColorTexture(unpack((color and color.groupBuffed) or {0.2, 0.8, 0.2, 0.7}))
+        end
+    end
+
+    -- Border styling (use color from config if available, else fallback)
+    local displayStyle = (self.db and self.db.display) or BuffPower.defaults.profile.display
+    if button.border and button.border.SetBackdropBorderColor then
+        if displayStyle and displayStyle.borderColor then
+            button.border:SetBackdropBorderColor(unpack(displayStyle.borderColor))
+        else
+            button.border:SetBackdropBorderColor(0.1, 0.1, 0.1, 1)
+        end
+    end
+
+    -- Set class icon if we have assignment
     if assignment and assignment.playerName and assignment.playerClass and
        BuffPower.ClassBuffInfo and BuffPower.ClassBuffInfo[assignment.playerClass] and
        BuffPower.ClassColors and BuffPower.ClassColors[assignment.playerClass] then
-        -- We have an assignment with valid class information
+
         local buffInfo = BuffPower.ClassBuffInfo[assignment.playerClass]
-        local classColor = BuffPower.ClassColors[assignment.playerClass]
-        
-        -- Set class-colored background
-        button.bg:SetColorTexture(classColor.r * 0.3, classColor.g * 0.3, classColor.b * 0.3, 0.7)
-          -- Update border color to match class
-        if button.border and button.border.SetBackdropBorderColor then
-            button.border:SetBackdropBorderColor(classColor.r * 0.8, classColor.g * 0.8, classColor.b * 0.8, 0.8)
-        end
-        
-        -- Set class icon
+        -- Icon
         button.icon:SetTexture(buffInfo.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
-        
+
         -- Set shortened display name
         local displayName = assignment.playerName
-        if string.len(displayName) > 5 then displayName = string.sub(displayName, 1, 4) .. ".." end
+        if displayName and string.len(displayName) > 5 then displayName = string.sub(displayName, 1, 4) .. ".." end
         button.text:SetText(groupText .. ": " .. displayName)
-        
-        -- Set time display (could be updated dynamically in a real implementation)
-        -- This is placeholder for buff duration
-        if assignment.playerName == UnitName("player") then
-            -- If this player is the assigned buffer, show R (Ready) as in your screenshot
-            button.time:SetText("R")
-            button.time:SetTextColor(0, 1, 0) -- Green for ready
-        else
-            -- For this mockup we'll just show placeholder times like in the screenshot
-            local mockTime = groupId + 10 -- Just a placeholder value
-            button.time:SetText(mockTime .. "m")
-            if mockTime < 5 then
-                button.time:SetTextColor(1, 0, 0) -- Red for low time
+
+        -- Enhancement Plan: Show actual timer for shortest group buff
+        local duration = self:GetShortestGroupBuffDuration(groupId)
+        if duration and duration > 0 then
+            local m = math.floor(duration / 60)
+            local s = math.fmod(duration, 60)
+            button.time:SetText(string.format("%d:%02d", m, s))
+            if duration < 30 then
+                button.time:SetTextColor(1, 0, 0) -- Red for critical
             else
-                button.time:SetTextColor(1, 1, 1) -- White for normal time
+                button.time:SetTextColor(1, 1, 1)
             end
+        else
+            button.time:SetText("") -- Hide if missing buff
         end
     else
         -- Unassigned group
         button.text:SetText(groupText .. ": " .. (numGroupMembers > 0 and "None" or "Empty"))
         button.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
-          -- Reset border color
+        -- Reset border color
         if button.border and button.border.SetBackdropBorderColor then
             button.border:SetBackdropBorderColor(0.4, 0.4, 0.4, 0.8) -- Gray for unassigned
         end
+        button.time:SetText("") -- No timer if no assignment
     end
 end
 
@@ -997,6 +1122,10 @@ function BuffPower:UpdateUI()
              BuffPower:UpdateOrbAppearance() -- Ensure orb appearance is correct when shown
         end
         BuffPower:PositionGroupButtons()
+        -- Enhancement: instantly update member popout if it is shown
+        if BuffPowerGroupMemberFrame and BuffPowerGroupMemberFrame:IsShown() and BuffPowerGroupMemberFrame.UpdateBackdrop then
+            BuffPowerGroupMemberFrame:UpdateBackdrop()
+        end
     else
         if BuffPowerOrbFrame and BuffPowerOrbFrame:IsVisible() then
             BuffPowerOrbFrame:Hide()
@@ -1094,16 +1223,19 @@ end
 
 function BuffPower:OnEnable()
     local _, playerClass = UnitClass("player")
-    if not BuffPowerDB or not BuffPowerDB.classSettings or not BuffPowerDB.classSettings[playerClass] or not BuffPowerDB.classSettings[playerClass].enabled then 
+    if not BuffPowerDB or not BuffPowerDB.classSettings or not BuffPowerDB.classSettings[playerClass] or not BuffPowerDB.classSettings[playerClass].enabled then
         DebugPrint("Addon not enabled for class: " .. playerClass)
-        return 
+        return
     end
-    self:RegisterEvent("PLAYER_LOGIN"); 
+    self:RegisterEvent("PLAYER_LOGIN")
     self:RegisterEvent("GROUP_ROSTER_UPDATE")
-    self:RegisterEvent("PLAYER_ENTERING_WORLD"); 
-    self:RegisterEvent("CHAT_MSG_ADDON", "OnAddonMessage") -- Directly map CHAT_MSG_ADDON
-    self:RegisterEvent("ADDON_LOADED") -- Register ADDON_LOADED event
-    
+    self:RegisterEvent("PLAYER_ENTERING_WORLD")
+    self:RegisterEvent("CHAT_MSG_ADDON", "OnAddonMessage")
+    self:RegisterEvent("ADDON_LOADED")
+
+    -- Enhancement: Register for buffs/debuffs for group UI refresh
+    self:RegisterEvent("UNIT_AURA", "OnAuraEvent")
+
     -- Register slash commands with AceConsole-3.0
     self:RegisterChatCommand("buffpower", "ChatCommand")
     self:RegisterChatCommand("bp", "ChatCommand")
@@ -1112,6 +1244,11 @@ function BuffPower:OnEnable()
         self:CreateUI(); self:UpdateRoster()
     end
     DebugPrint("BuffPower Enabled via Ace3.")
+end
+
+-- Handler: Updates UI on unit aura change (buff/debuff)
+function BuffPower:OnAuraEvent(event, arg1)
+    if self.UpdateUI then self:UpdateUI() end
 end
 
 function BuffPower:OnDisable()

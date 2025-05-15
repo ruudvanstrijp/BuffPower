@@ -114,6 +114,30 @@ BuffPower.defaults = {
         showTooltips = true,
         showGroupMemberNames = true,
         smartBuff = true, -- Re-evaluate if this concept still applies well
+
+        -- === BuffPower Enhancement Plan: UI and Color Defaults ===
+        colors = {
+            groupMissingBuff = {0.8, 0.2, 0.2, 0.7}, -- Red, used for group missing buff
+            groupBuffed = {0.2, 0.8, 0.2, 0.7},      -- Green, used for group buffed
+        },
+        display = {
+            buttonWidth   = 120,      -- Width of group buttons
+            buttonHeight  = 28,       -- Height of group buttons
+            buttonSpacing = 2,        -- Spacing between group buttons
+            fontFace      = "GameFontNormalSmall", -- Default font, can be set to LSM3 font key
+            fontSize      = 12,
+            fontColor     = {1, 1, 1, 1}, -- Text color (white)
+            borderColor   = {0.1, 0.1, 0.1, 1}, -- Near-black border
+            borderTexture = "Interface\\ChatFrame\\ChatFrameBackground", -- Simple dark border texture
+            edgeSize      = 1,
+            backgroundColor = {0.12, 0.12, 0.12, 1}, -- Sleek dark background (fallback/default)
+            timerFontSize = 12,       -- Size for timer text (group buff duration)
+            playerListBackground = {0.15, 0.15, 0.15, 0.95}, -- Mouseover player frame bg
+            playerListFontColor = {1, 1, 1, 1},
+            playerListBorderColor = {0.1, 0.1, 0.1, 1},
+            playerListFontSize = 11,
+        }
+        -- Add further fields as needed for expandability
     }
 }
 
