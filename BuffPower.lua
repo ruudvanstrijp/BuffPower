@@ -242,10 +242,32 @@ end
 -- Main: Show and fill the group member frame
 local function BuffPower_ShowGroupMemberFrame(anchorButton, groupId)
     CreateOrResetGroupMemberFrame()
+    -- Mark this as a new show for popout race-free handling
+    BuffPowerGroupMemberFrame._popoutShowId = (BuffPowerGroupMemberFrame._popoutShowId or 0) + 1
     local members = BuffPower:GetGroupMembers(groupId)
-    local _, playerClass = UnitClass("player")
-    local buffInfo = BuffPower.ClassBuffInfo and BuffPower.ClassBuffInfo[playerClass]
-    PopulateGroupMemberButtons(groupId, members, buffInfo, playerClass)
+    -- Use correct group bufferClass for member popout logic (same as IsGroupMissingBuff group logic)
+    local assignment = (BuffPowerDB and BuffPowerDB.assignments) and BuffPowerDB.assignments[groupId]
+    local groupBuffClass
+    if assignment and assignment.playerClass then
+        groupBuffClass = assignment.playerClass
+    else
+        local numGroupMembers = GetNumGroupMembers() or 0
+        local _, playerClass = UnitClass("player")
+        if playerClass == "MAGE" or playerClass == "PRIEST" or playerClass == "DRUID" then
+            groupBuffClass = playerClass
+        elseif numGroupMembers == 0 or (not IsInRaid() and groupId == 1) then
+            groupBuffClass = playerClass
+        elseif IsInRaid() then
+            for _, member in ipairs(members) do
+                if member.class == "MAGE" or member.class == "PRIEST" or member.class == "DRUID" then
+                    groupBuffClass = member.class
+                    break
+                end
+            end
+        end
+    end
+    local buffInfo = groupBuffClass and BuffPower.ClassBuffInfo and BuffPower.ClassBuffInfo[groupBuffClass] or nil
+    PopulateGroupMemberButtons(groupId, members, buffInfo, groupBuffClass)
     -- Set frame size
     local buttonHeight, verticalSpacing = 22, 1
     local h = (#members > 0 and (#members * (buttonHeight + verticalSpacing) + 16)) or 20
@@ -919,14 +941,19 @@ function BuffPower:CreateUI()
                 BuffPower_ShowGroupMemberFrame(self_button, self_button.groupID)
             end)
             groupButton:SetScript("OnLeave", function(self_button)
-                -- Hide frame after short delay if the mouse truly left all related widgets
-                C_Timer.After(0.15, function()
-                    if BuffPowerGroupMemberFrame and BuffPowerGroupMemberFrame:IsShown() then
-                        if not self_button:IsMouseOver() and not BuffPowerGroupMemberFrame:IsMouseOver() then
-                            BuffPowerGroupMemberFrame:Hide()
+                -- Hide frame after short delay if the mouse truly left all related widgets.
+                -- Use a show/hide token to avoid delayed hide from old group firing after switching.
+                if BuffPowerGroupMemberFrame then
+                    BuffPowerGroupMemberFrame._popoutShowId = (BuffPowerGroupMemberFrame._popoutShowId or 0) + 1
+                    local myShowId = BuffPowerGroupMemberFrame._popoutShowId
+                    C_Timer.After(0.15, function()
+                        if BuffPowerGroupMemberFrame and BuffPowerGroupMemberFrame:IsShown() and BuffPowerGroupMemberFrame._popoutShowId == myShowId then
+                            if not self_button:IsMouseOver() and not BuffPowerGroupMemberFrame:IsMouseOver() then
+                                BuffPowerGroupMemberFrame:Hide()
+                            end
                         end
-                    end
-                end)
+                    end)
+                end
             end)
             -- Refresh member backgrounds after group buff (right or left click)
             groupButton:SetScript("PostClick", function(selfB)
