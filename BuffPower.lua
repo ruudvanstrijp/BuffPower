@@ -79,27 +79,20 @@ local BuffPowerGroupButtons = {} -- Array to hold the group button frames
 local BuffPowerGroupMemberFrame -- Will be managed in CreateUI and group button handlers
 
 -- Helper: Ensures frame exists, resets properties
-local function CreateOrResetGroupMemberFrame()
-    if not BuffPowerGroupMemberFrame then
-        BuffPowerGroupMemberFrame = CreateFrame("Frame", "BuffPowerGroupMemberFrame", UIParent, BackdropTemplateMixin and "BackdropTemplate")
-        BuffPowerGroupMemberFrame:SetFrameStrata("TOOLTIP")
-        BuffPowerGroupMemberFrame:SetBackdrop({
-            bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-            tile = true, tileSize = 16, edgeSize = 8,
-            insets = { left = 2, right = 2, top = 2, bottom = 2 }
-        })
-        BuffPowerGroupMemberFrame:SetBackdropColor(0,0,0,0.9)
-        BuffPowerGroupMemberFrame:SetMovable(false)
-        BuffPowerGroupMemberFrame:SetScript("OnLeave", function(self)
-            self:Hide()
-        end)
+-- Helper: Hides all member buttons for group popout (removes container frame entirely)
+local function HideGroupMemberButtons()
+    if BuffPower.MemberPopoutTicker then
+        BuffPower.MemberPopoutTicker:Cancel()
+        BuffPower.MemberPopoutTicker = nil
     end
-    -- Remove old member buttons if present
-    if BuffPowerGroupMemberFrame.buttons then
-        for _, btn in ipairs(BuffPowerGroupMemberFrame.buttons) do btn:Hide() btn:SetParent(nil) end
+    BuffPower.MemberPopoutGroupId = nil
+    for i = 1, 40 do
+        local btn = _G["BuffPowerGroupMemberButton" .. i]
+        if btn then
+            btn:Hide()
+            btn:SetParent(UIParent)
+        end
     end
-    BuffPowerGroupMemberFrame.buttons = {}
 end
 
 -- Helper: Update all per-button visual/logic; called by Populator and by ticker
@@ -253,25 +246,34 @@ local function UpdateMemberButtonAppearance(btn, member, buffInfo, bufferClass)
 end
 
 -- Helper: Populates/reset all member buttons
-local function PopulateGroupMemberButtons(groupId, members, buffInfo, playerClass)
-    -- Fetch config so member button size matches group button
+local function PopulateGroupMemberButtons(anchorButton, members, buffInfo, playerClass)
+    -- Show member buttons aligned vertically right of anchorButton (no container)
     local displayConfig = (BuffPower.db and BuffPower.db.profile and BuffPower.db.profile.display) or (BuffPower.defaults and BuffPower.defaults.profile and BuffPower.defaults.profile.display) or {}
     local buttonWidth = (displayConfig.buttonWidth ~= nil) and displayConfig.buttonWidth or 120
     local buttonHeight = (displayConfig.buttonHeight ~= nil) and displayConfig.buttonHeight or 28
     local verticalSpacing = (displayConfig.verticalSpacing ~= nil) and displayConfig.verticalSpacing or 1
-    local framePadding = 16  -- Keep consistent with BuffPower_ShowGroupMemberFrame
-    local left_offset = math.floor(framePadding / 2)
-    local yOffset = -8
+
+    -- Hide any old buttons from previous popouts
+    for i = #members + 1, 40 do
+        local btn = _G["BuffPowerGroupMemberButton" .. i]
+        if btn then btn:Hide() end
+    end
+
+    -- Layout member buttons in a vertical stack, anchored to anchorButton (the group button)
     for idx, member in ipairs(members) do
-        local btn = CreateFrame("Button", "BuffPowerGroupMemberButton"..idx, BuffPowerGroupMemberFrame, "SecureActionButtonTemplate")
+        local btn = _G["BuffPowerGroupMemberButton" .. idx] or CreateFrame("Button", "BuffPowerGroupMemberButton"..idx, UIParent, "SecureActionButtonTemplate")
         btn:SetSize(buttonWidth, buttonHeight)
-        -- Center the button in the member frame horizontally
-        btn:SetPoint("TOPLEFT", left_offset, yOffset)
-        yOffset = yOffset - (buttonHeight + verticalSpacing)
+        btn:ClearAllPoints()
+        if idx == 1 then
+            btn:SetPoint("LEFT", anchorButton, "RIGHT", 8, 0)
+        else
+            local prevBtn = _G["BuffPowerGroupMemberButton" .. (idx-1)]
+            btn:SetPoint("TOPLEFT", prevBtn, "BOTTOMLEFT", 0, -verticalSpacing)
+        end
         UpdateMemberButtonAppearance(btn, member, buffInfo, playerClass)
         btn:Show()
         btn:RegisterForClicks("AnyUp")
-        -- Feedback animation group
+        -- Feedback animation group (as before)
         if not btn.anim then
             btn.anim = btn:CreateAnimationGroup()
             btn.anim.fade = btn.anim:CreateAnimation("Alpha")
@@ -292,59 +294,17 @@ local function PopulateGroupMemberButtons(groupId, members, buffInfo, playerClas
                     BuffPower:UpdateRoster()
                 end
             end)
-            -- Refresh live backgrounds if open
-            if BuffPowerGroupMemberFrame and BuffPowerGroupMemberFrame:IsShown() and BuffPowerGroupMemberFrame.UpdateBackdrop then
-                C_Timer.After(0.7, function()
-                    if BuffPowerGroupMemberFrame and BuffPowerGroupMemberFrame:IsShown() then
-                        BuffPowerGroupMemberFrame:UpdateBackdrop()
-                    end
-                end)
-            end
-        end)
-        BuffPowerGroupMemberFrame.buttons[#BuffPowerGroupMemberFrame.buttons+1] = btn
-    end
-    -- Setup live background updating just like before
-    if not BuffPowerGroupMemberFrame.UpdateBackdrop then
-        function BuffPowerGroupMemberFrame:UpdateBackdrop()
-            if not self:IsShown() or not self.lastGroupId then return end
-            local updateMembers = BuffPower:GetGroupMembers(self.lastGroupId)
-            local _, playerClass = UnitClass("player")
-            local buffInfo = BuffPower.ClassBuffInfo and BuffPower.ClassBuffInfo[playerClass]
-            for idx, member in ipairs(updateMembers) do
-                local btn = self.buttons[idx]
-                if btn then
-                    UpdateMemberButtonAppearance(btn, member, buffInfo, playerClass)
-                end
-            end
-        end
-    end
-    -- Start or restart ticker
-    BuffPowerGroupMemberFrame.lastGroupId = groupId
-    if BuffPowerGroupMemberFrame.updateTicker then
-        BuffPowerGroupMemberFrame.updateTicker:Cancel()
-        BuffPowerGroupMemberFrame.updateTicker = nil
-    end
-    BuffPowerGroupMemberFrame.updateTicker = C_Timer.NewTicker(0.5, function()
-        if BuffPowerGroupMemberFrame:IsShown() and BuffPowerGroupMemberFrame.lastGroupId then
-            BuffPowerGroupMemberFrame:UpdateBackdrop()
-        end
-    end)
-    -- Hook ticker stop on hide
-    if not BuffPowerGroupMemberFrame._tickerHooked then
-        BuffPowerGroupMemberFrame._tickerHooked = true
-        BuffPowerGroupMemberFrame:HookScript("OnHide", function(self)
-            if self.updateTicker then self.updateTicker:Cancel(); self.updateTicker = nil end
         end)
     end
 end
 
 -- Main: Show and fill the group member frame
 local function BuffPower_ShowGroupMemberFrame(anchorButton, groupId)
-    CreateOrResetGroupMemberFrame()
-    -- Mark this as a new show for popout race-free handling
-    BuffPowerGroupMemberFrame._popoutShowId = (BuffPowerGroupMemberFrame._popoutShowId or 0) + 1
+    -- Remove all previous member buttons (popouts)
+    HideGroupMemberButtons()
     local members = BuffPower:GetGroupMembers(groupId)
-    -- Use correct group bufferClass for member popout logic (same as IsGroupMissingBuff group logic)
+
+    -- Determine which class to use for group logic
     local assignment = (BuffPowerDB and BuffPowerDB.assignments) and BuffPowerDB.assignments[groupId]
     local groupBuffClass
     if assignment and assignment.playerClass then
@@ -366,39 +326,43 @@ local function BuffPower_ShowGroupMemberFrame(anchorButton, groupId)
         end
     end
     local buffInfo = groupBuffClass and BuffPower.ClassBuffInfo and BuffPower.ClassBuffInfo[groupBuffClass] or nil
-    PopulateGroupMemberButtons(groupId, members, buffInfo, groupBuffClass)
-    -- Set frame size to exactly fit member buttons (including any config-driven width/padding)
-    local displayConfig = (BuffPower.db and BuffPower.db.profile and BuffPower.db.profile.display) or (BuffPower.defaults and BuffPower.defaults.profile and BuffPower.defaults.profile.display) or {}
-    local buttonWidth = (displayConfig.buttonWidth ~= nil) and displayConfig.buttonWidth or 120
-    local buttonHeight = (displayConfig.buttonHeight ~= nil) and displayConfig.buttonHeight or 28
-    local verticalSpacing = (displayConfig.verticalSpacing ~= nil) and displayConfig.verticalSpacing or 1
-    local framePadding = 16 -- was +16 for consistency with old popout visuals
-    local h = (#members > 0 and (#members * (buttonHeight + verticalSpacing) + framePadding)) or 20
-    BuffPowerGroupMemberFrame:SetSize(buttonWidth + framePadding, h)
-    -- Position the frame to the right of the anchor button
-    BuffPowerGroupMemberFrame:SetPoint("LEFT", anchorButton, "RIGHT", 8, 0)
-    BuffPowerGroupMemberFrame:Show()
-    -- Register UNIT_AURA event for live update only when frame is shown
-    if not BuffPowerGroupMemberFrame._unitAuraRegistered then
-        BuffPowerGroupMemberFrame._unitAuraRegistered = true
-        BuffPowerGroupMemberFrame:SetScript("OnShow", function(self)
-            if not self._eventFrame then
-                self._eventFrame = CreateFrame("Frame")
-            end
-            self._eventFrame:RegisterEvent("UNIT_AURA")
-            self._eventFrame:SetScript("OnEvent", function(_, event, unit)
-                if event == "UNIT_AURA" and BuffPowerGroupMemberFrame:IsShown() then
-                    BuffPowerGroupMemberFrame:UpdateBackdrop()
+    PopulateGroupMemberButtons(anchorButton, members, buffInfo, groupBuffClass)
+
+    -- Set group id for live refresh
+    BuffPower.MemberPopoutGroupId = groupId
+    -- Ticker to update member buttons while popout is open
+    BuffPower.MemberPopoutTicker = C_Timer.NewTicker(0.5, function()
+        if BuffPower.MemberPopoutGroupId == groupId then
+            local members = BuffPower:GetGroupMembers(groupId)
+            local groupBuffClass = nil
+            local assignment = (BuffPowerDB and BuffPowerDB.assignments) and BuffPowerDB.assignments[groupId]
+            if assignment and assignment.playerClass then
+                groupBuffClass = assignment.playerClass
+            else
+                local numGroupMembers = GetNumGroupMembers() or 0
+                local _, playerClass = UnitClass("player")
+                if playerClass == "MAGE" or playerClass == "PRIEST" or playerClass == "DRUID" then
+                    groupBuffClass = playerClass
+                elseif numGroupMembers == 0 or (not IsInRaid() and groupId == 1) then
+                    groupBuffClass = playerClass
+                elseif IsInRaid() then
+                    for _, member in ipairs(members) do
+                        if member.class == "MAGE" or member.class == "PRIEST" or member.class == "DRUID" then
+                            groupBuffClass = member.class
+                            break
+                        end
+                    end
                 end
-            end)
-        end)
-        BuffPowerGroupMemberFrame:SetScript("OnHide", function(self)
-            if self._eventFrame then
-                self._eventFrame:UnregisterEvent("UNIT_AURA")
             end
-            if self.updateTicker then self.updateTicker:Cancel(); self.updateTicker = nil end
-        end)
-    end
+            local buffInfo = groupBuffClass and BuffPower.ClassBuffInfo and BuffPower.ClassBuffInfo[groupBuffClass] or nil
+            for idx, member in ipairs(members) do
+                local btn = _G["BuffPowerGroupMemberButton" .. idx]
+                if btn and btn:IsShown() then
+                    UpdateMemberButtonAppearance(btn, member, buffInfo, groupBuffClass)
+                end
+            end
+        end
+    end)
 end
 
 -- Default Database Structure
@@ -851,119 +815,101 @@ end
 
 function BuffPower:CreateUI()
     DebugPrint("BuffPower:CreateUI called")
-    -- Create the main Frame if it doesn't exist (formerly BuffPowerOrbFrame)
-    if not BuffPowerOrbFrame then
-        BuffPowerOrbFrame = CreateFrame("Frame", "BuffPowerOrbFrame", UIParent)
-        -- Size will be set dynamically by PositionGroupButtons
-        BuffPowerOrbFrame:SetMovable(true)
-        BuffPowerOrbFrame:EnableMouse(true)
-        BuffPowerOrbFrame:RegisterForDrag("LeftButton")
-        BuffPowerOrbFrame:SetClampedToScreen(true)
 
-        -- Apply Backdrop directly to the main frame
+    -- Create movable "BuffPower" anchor button
+    if not self.AnchorButton then
+        -- Create anchor as true "group-style" button, not WoW template
+        local displayConfig = (BuffPower.db and BuffPower.db.profile and BuffPower.db.profile.display) or BuffPower.defaults.profile.display
+        local buttonWidth = (displayConfig and displayConfig.buttonWidth) or 120
+        local buttonHeight = (displayConfig and displayConfig.buttonHeight) or 28
+        local fontFace = (displayConfig and displayConfig.fontFace) or "GameFontNormalSmall"
+        local fontSize = (displayConfig and displayConfig.fontSize) or 12
+        local borderColor = (displayConfig and displayConfig.borderColor) or {0.1, 0.1, 0.1, 1}
+        local borderTexture = (displayConfig and displayConfig.borderTexture) or "Interface\\ChatFrame\\ChatFrameBackground"
+        local edgeSize = (displayConfig and displayConfig.edgeSize) or 1
+        local backgroundColor = (displayConfig and displayConfig.backgroundColor) or {0.1, 0.1, 0.1, 0.7}
+        local fontColor = (displayConfig and displayConfig.fontColor) or {1,1,1,1}
+
+        local anchor = CreateFrame("Button", "BuffPowerAnchorButton", UIParent)
+        anchor:SetSize(buttonWidth, buttonHeight)
+        anchor:SetMovable(true)
+        anchor:EnableMouse(true)
+        anchor:RegisterForDrag("LeftButton")
+        anchor:SetClampedToScreen(true)
+
+        -- --- Custom group button look ---
+        -- Background
+        anchor.bg = anchor:CreateTexture(nil, "BACKGROUND")
+        anchor.bg:SetAllPoints()
+        anchor.bg:SetColorTexture(unpack(backgroundColor))
+
+        -- Border
+        anchor.border = CreateFrame("Frame", nil, anchor)
+        anchor.border:SetFrameLevel(anchor:GetFrameLevel() - 1)
         if BackdropTemplateMixin then
-            Mixin(BuffPowerOrbFrame, BackdropTemplateMixin)
+            Mixin(anchor.border, BackdropTemplateMixin)
         end
-        local backdropInfo = {
-            bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-            edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-            tile = true, tileSize = 32, edgeSize = 16,
-            insets = { left = 5, right = 5, top = 5, bottom = 5 }
+        anchor.border:SetPoint("TOPLEFT", anchor, "TOPLEFT", -1, 1)
+        anchor.border:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", 1, -1)
+        local borderBackdropInfo = {
+            edgeFile = borderTexture,
+            edgeSize = edgeSize,
+            insets = {left = 0, right = 0, top = 0, bottom = 0}
         }
-        if BuffPowerOrbFrame.SetBackdrop then
-            BuffPowerOrbFrame:SetBackdrop(backdropInfo)
-            BuffPowerOrbFrame:SetBackdropColor(0.1, 0.1, 0.1, 0.85) -- Darker background
+        if anchor.border.SetBackdrop then
+            anchor.border:SetBackdrop(borderBackdropInfo)
+            anchor.border:SetBackdropBorderColor(unpack(borderColor))
         end
-        
-        -- Add a title text at the top of the frame
-        BuffPowerOrbFrame.title = BuffPowerOrbFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-        BuffPowerOrbFrame.title:SetPoint("TOP", BuffPowerOrbFrame, "TOP", 0, -8) -- Adjusted for insets
-        BuffPowerOrbFrame.title:SetText("BuffPower")
-        -- Make the title text support mouse
-        BuffPowerOrbFrame.titleBg = BuffPowerOrbFrame:CreateTexture(nil, "BACKGROUND")
-        BuffPowerOrbFrame.titleBg:SetPoint("TOPLEFT", BuffPowerOrbFrame.title, "TOPLEFT", -4, 2)
-        BuffPowerOrbFrame.titleBg:SetPoint("BOTTOMRIGHT", BuffPowerOrbFrame.title, "BOTTOMRIGHT", 4, -2)
-        BuffPowerOrbFrame.titleBg:SetColorTexture(0,0,0,0)
-        BuffPowerOrbFrame.titleFrame = CreateFrame("Frame", nil, BuffPowerOrbFrame)
-        BuffPowerOrbFrame.titleFrame:SetAllPoints(BuffPowerOrbFrame.title)
-        BuffPowerOrbFrame.titleFrame:SetFrameStrata("HIGH")
-        BuffPowerOrbFrame.titleFrame:EnableMouse(true)
-        BuffPowerOrbFrame.titleFrame:SetScript("OnMouseUp", function(self, btn)
-            -- Open options menu
-            if BuffPower and type(BuffPower.OpenAssignmentMenu) == "function" then
-                BuffPower:OpenAssignmentMenu(1, BuffPowerOrbFrame.titleFrame)
-                -- Could make this a general options panel in future
-            elseif InterfaceOptionsFrame_OpenToCategory then
-                InterfaceOptionsFrame_OpenToCategory(BuffPower.optionsPanelName or "BuffPower")
-            end
-        end)
-        BuffPowerOrbFrame.titleFrame:SetScript("OnEnter", function(self)
-            BuffPowerOrbFrame.titleBg:SetColorTexture(1,1,0,0.3)
-        end)
-        BuffPowerOrbFrame.titleFrame:SetScript("OnLeave", function(self)
-            BuffPowerOrbFrame.titleBg:SetColorTexture(0,0,0,0)
-        end)
 
-        -- Create the main container frame for buttons inside the main frame
-        BuffPowerOrbFrame.container = CreateFrame("Frame", "BuffPowerContainerFrame", BuffPowerOrbFrame)
-        BuffPowerOrbFrame.container:SetPoint("TOPLEFT", BuffPowerOrbFrame, "TOPLEFT", 8, -28) -- Below title, adjusted for insets
-        -- Container size will be set by PositionGroupButtons
+        -- Label as central FontString
+        anchor.text = anchor:CreateFontString(nil, "ARTWORK", fontFace)
+        anchor.text:SetText("BuffPower")
+        anchor.text:SetJustifyH("CENTER")
+        anchor.text:SetPoint("LEFT", anchor, "LEFT", 10, 0)
+        anchor.text:SetPoint("RIGHT", anchor, "RIGHT", -10, 0)
+        if fontSize and anchor.text.SetFont then anchor.text:SetFont(GameFontNormal:GetFont(), fontSize) end
+        if fontColor then anchor.text:SetTextColor(unpack(fontColor)) end
 
-        BuffPowerOrbFrame:SetScript("OnDragStart", function(self)
+        -- No icon/timer for anchor
+
+        -- Restore saved position or center
+        local pos = (BuffPowerDB and BuffPowerDB.anchorPosition) or { a1 = "CENTER", a2 = "CENTER", x = 0, y = 0 }
+        anchor:SetPoint(pos.a1 or "CENTER", UIParent, pos.a2 or "CENTER", pos.x or 0, pos.y or 0)
+
+        anchor:SetScript("OnDragStart", function(self)
             if BuffPowerDB and not BuffPowerDB.locked then
                 self:StartMoving()
             end
         end)
-        BuffPowerOrbFrame:SetScript("OnDragStop", function(self)
+        anchor:SetScript("OnDragStop", function(self)
             self:StopMovingOrSizing()
-            if BuffPowerDB and BuffPowerDB.orbPosition then -- Keep using orbPosition for now
-                BuffPowerDB.orbPosition.a1, _, BuffPowerDB.orbPosition.a2, BuffPowerDB.orbPosition.x, BuffPowerDB.orbPosition.y = self:GetPoint()
-                -- Repositioning buttons is implicitly handled by Show/Hide or UpdateUI calls
+            if BuffPowerDB then
+                if not BuffPowerDB.anchorPosition then
+                    BuffPowerDB.anchorPosition = { a1 = "CENTER", a2 = "CENTER", x = 0, y = 0 }
+                end
+                local a1, _, a2, x, y = self:GetPoint()
+                BuffPowerDB.anchorPosition.a1 = a1 or "CENTER"
+                BuffPowerDB.anchorPosition.a2 = a2 or "CENTER"
+                BuffPowerDB.anchorPosition.x = x or 0
+                BuffPowerDB.anchorPosition.y = y or 0
             end
         end)
-
-        BuffPowerOrbFrame:SetScript("OnMouseDown", function(self_frame, mouseButton)
-            if mouseButton == "RightButton" then
-                DebugPrint("RightButton clicked on BuffPowerOrbFrame.")
-
+        anchor:SetScript("OnClick", function(self, button)
+            if button == "RightButton" then
                 if BuffPowerDB and BuffPowerDB.locked then
-                    DebugPrint("UI is locked. Aborting options panel opening.")
-                    DEFAULT_CHAT_FRAME:AddMessage(L["UI is locked. Unlock via options or command."] or "UI is locked.")
-                    return
+                    DEFAULT_CHAT_FRAME:AddMessage(L["UI is locked. Unlock via options or command."] or "UI is locked."); return
                 end
-
-                DebugPrint("UI is not locked. Proceeding to open options panel.")
-                DebugPrint("Value of BuffPower.optionsPanelName:", BuffPower.optionsPanelName)
-                DebugPrint("Type of InterfaceOptionsFrame_OpenToCategory:", type(InterfaceOptionsFrame_OpenToCategory))
-                DebugPrint("Type of _G[\"BuffPowerOptionsFrame_Toggle\"]:", type(_G["BuffPowerOptionsFrame_Toggle"]))
-
-                local panelNameToOpen = BuffPower.optionsPanelName -- Use the one set globally
-
-                if panelNameToOpen and type(InterfaceOptionsFrame_OpenToCategory) == "function" then
-                    DebugPrint("Attempting: InterfaceOptionsFrame_OpenToCategory('", panelNameToOpen, "')")
-                    InterfaceOptionsFrame_OpenToCategory(panelNameToOpen)
-                    DebugPrint("Called InterfaceOptionsFrame_OpenToCategory. Check if options panel appeared.")
-                elseif type(_G["BuffPowerOptionsFrame_Toggle"]) == "function" then
-                    DebugPrint("Attempting: _G[\"BuffPowerOptionsFrame_Toggle\"]()")
-                    _G["BuffPowerOptionsFrame_Toggle"]()
-                    DebugPrint("Called _G[\"BuffPowerOptionsFrame_Toggle\"]. Check if options panel appeared.")
-                else
-                    DebugPrint("All methods failed. Displaying 'Options panel not found.' message.")
-                    DEFAULT_CHAT_FRAME:AddMessage(L["Options panel not found. Right-click to configure."] or "Options panel not found.")
+                if BuffPower and type(BuffPower.OpenAssignmentMenu) == "function" then
+                    BuffPower:OpenAssignmentMenu(1, self)
+                elseif InterfaceOptionsFrame_OpenToCategory then
+                    InterfaceOptionsFrame_OpenToCategory(BuffPower.optionsPanelName or "BuffPower")
                 end
             end
-            -- LeftButton drag is handled by RegisterForDrag
         end)
-        
-        -- Set initial position from DB or default
-        local pos = (BuffPowerDB and BuffPowerDB.orbPosition) or { a1 = "CENTER", a2 = "CENTER", x = 0, y = 0 }
-        BuffPowerOrbFrame:SetPoint(pos.a1, UIParent, pos.a2, pos.x, pos.y)
+        self.AnchorButton = anchor
     end
 
-    -- Set initial appearance (e.g., border for lock state)
-    BuffPower:UpdateOrbAppearance()
-
-    -- Create Group Buttons if they don't exist
+    -- Create group buttons if needed
     for i = 1, MAX_RAID_GROUPS do
         if not BuffPowerGroupButtons[i] then
             local displayConfig = (BuffPower.db and BuffPower.db.profile and BuffPower.db.profile.display) or BuffPower.defaults.profile.display
@@ -977,16 +923,16 @@ function BuffPower:CreateUI()
             local edgeSize = (displayConfig and displayConfig.edgeSize) or 1
             local backgroundColor = (displayConfig and displayConfig.backgroundColor) or {0.1, 0.1, 0.1, 0.7}
             local fontColor = (displayConfig and displayConfig.fontColor) or {1,1,1,1}
-
-            local groupButton = CreateFrame("Button", "BuffPowerGroupButton" .. i, BuffPowerOrbFrame.container, "SecureActionButtonTemplate")
+            local groupButton = CreateFrame("Button", "BuffPowerGroupButton" .. i, UIParent, "SecureActionButtonTemplate")
             groupButton:SetSize(buttonWidth, buttonHeight)
             groupButton.groupID = i
 
-            -- Create a colored background texture
+            -- Background
             groupButton.bg = groupButton:CreateTexture(nil, "BACKGROUND")
             groupButton.bg:SetAllPoints()
-            groupButton.bg:SetColorTexture(unpack(backgroundColor)) -- Sleek dark/fallback background
+            groupButton.bg:SetColorTexture(unpack(backgroundColor))
 
+            -- Border
             groupButton.border = CreateFrame("Frame", nil, groupButton)
             groupButton.border:SetFrameLevel(groupButton:GetFrameLevel() - 1)
             if BackdropTemplateMixin then
@@ -994,7 +940,6 @@ function BuffPower:CreateUI()
             end
             groupButton.border:SetPoint("TOPLEFT", groupButton, "TOPLEFT", -1, 1)
             groupButton.border:SetPoint("BOTTOMRIGHT", groupButton, "BOTTOMRIGHT", 1, -1)
-
             local borderBackdropInfo = {
                 edgeFile = borderTexture,
                 edgeSize = edgeSize,
@@ -1005,27 +950,27 @@ function BuffPower:CreateUI()
                 groupButton.border:SetBackdropBorderColor(unpack(borderColor))
             end
 
-            -- Class icon on left
+            -- Class icon
             groupButton.icon = groupButton:CreateTexture(nil, "ARTWORK")
             groupButton.icon:SetSize(buttonHeight-4, buttonHeight-4)
             groupButton.icon:SetPoint("LEFT", 4, 0)
             groupButton.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
 
-            -- Timer text on right (for buff duration)
+            -- Timer text (right)
             groupButton.time = groupButton:CreateFontString(nil, "ARTWORK", fontFace)
             groupButton.time:SetPoint("RIGHT", -4, 0)
             groupButton.time:SetText("")
             if fontSize and groupButton.time.SetFont then groupButton.time:SetFont(GameFontNormal:GetFont(), timerFontSize) end
 
-            -- Group text in center
+            -- Group label (center)
             groupButton.text = groupButton:CreateFontString(nil, "ARTWORK", fontFace)
             groupButton.text:SetPoint("LEFT", groupButton.icon, "RIGHT", 4, 0)
             groupButton.text:SetPoint("RIGHT", groupButton.time, "LEFT", -2, 0)
             groupButton.text:SetJustifyH("LEFT")
             if fontSize and groupButton.text.SetFont then groupButton.text:SetFont(GameFontNormal:GetFont(), fontSize) end
             if fontColor then groupButton.text:SetTextColor(unpack(fontColor)) end
-            
-            -- SecureActionButton: Assign group buff spell to button click for this group
+
+            -- SecureActionButton: assign buffs
             local _, playerClass = UnitClass("player")
             local buffInfo = BuffPower.ClassBuffInfo and BuffPower.ClassBuffInfo[playerClass]
             if buffInfo then
@@ -1040,12 +985,9 @@ function BuffPower:CreateUI()
                 groupButton.tooltip = "Your class cannot group buff."
             end
             groupButton:SetScript("OnEnter", function(self_button)
-                -- Improved mouseover logic from newui: always show the member frame on hover
                 BuffPower_ShowGroupMemberFrame(self_button, self_button.groupID)
             end)
             groupButton:SetScript("OnLeave", function(self_button)
-                -- Hide frame after short delay if the mouse truly left all related widgets.
-                -- Use a show/hide token to avoid delayed hide from old group firing after switching.
                 if BuffPowerGroupMemberFrame then
                     BuffPowerGroupMemberFrame._popoutShowId = (BuffPowerGroupMemberFrame._popoutShowId or 0) + 1
                     local myShowId = BuffPowerGroupMemberFrame._popoutShowId
@@ -1058,36 +1000,24 @@ function BuffPower:CreateUI()
                     end)
                 end
             end)
-            -- Refresh member backgrounds after group buff (right or left click)
             groupButton:SetScript("PostClick", function(selfB)
-                -- Always refresh the full roster after a group buff, like PallyPower
                 C_Timer.After(0.6, function()
                     if BuffPower and BuffPower.UpdateRoster then
                         BuffPower:UpdateRoster()
                     end
                 end)
             end)
-            -- Also ensure member frame hides itself properly on mouseleave (already set above)
             groupButton:Hide() -- Initially hide
             BuffPowerGroupButtons[i] = groupButton
         end
     end
 
-    -- Show/Hide Orb and trigger button positioning
-    if BuffPowerDB and BuffPowerDB.showWindow then
-        BuffPowerOrbFrame:Show()
-        BuffPower:PositionGroupButtons() -- This will also show the necessary buttons
-    elseif BuffPowerOrbFrame then
-        BuffPowerOrbFrame:Hide()
-        for _, btn in ipairs(BuffPowerGroupButtons) do
-            if btn then btn:Hide() end
-        end
-    end
+    BuffPower:PositionGroupButtons()
 end
 
 function BuffPower:PositionGroupButtons()
     DebugPrint("BuffPower:PositionGroupButtons called")
-    if not BuffPowerOrbFrame or not BuffPowerOrbFrame:IsVisible() or not BuffPowerOrbFrame.container then
+    if not self.AnchorButton or not self.AnchorButton:IsVisible() then
         for _, btn in pairs(BuffPowerGroupButtons) do if btn then btn:Hide() end end
         return
     end
@@ -1098,7 +1028,6 @@ function BuffPower:PositionGroupButtons()
         if GetNumSubgroups then
             numSubgroups = GetNumSubgroups()
         elseif GetNumGroupMembers then
-            -- Fallback: count highest subgroup number in the raid
             for i=1,MAX_RAID_MEMBERS do
                 if UnitInRaid and UnitInRaid("raid"..i) and GetRaidRosterInfo then
                     local _, _, subgroup = GetRaidRosterInfo(i)
@@ -1116,7 +1045,6 @@ function BuffPower:PositionGroupButtons()
         for i = 1, numSubgroups do
             table.insert(effectiveGroupsToDisplay, i)
         end
-         -- Fallback if no groups recognized but we have members
         if #effectiveGroupsToDisplay == 0 and GetNumGroupMembers and GetNumGroupMembers() > 0 then
             local numActualGroups = 0
             if GetRaidRosterInfo then
@@ -1129,78 +1057,47 @@ function BuffPower:PositionGroupButtons()
             if numActualGroups == 0 and GetNumGroupMembers() > 0 then numActualGroups = 1 end
 
             for i = 1, numActualGroups do
-                 if not tContains(effectiveGroupsToDisplay, i) then table.insert(effectiveGroupsToDisplay, i) end
+                if not tContains(effectiveGroupsToDisplay, i) then table.insert(effectiveGroupsToDisplay, i) end
             end
             if #effectiveGroupsToDisplay == 0 and GetNumGroupMembers() > 0 then table.insert(effectiveGroupsToDisplay, 1) end
         end
     elseif IsInGroup() then
-        table.insert(effectiveGroupsToDisplay, 1) 
-    elseif BuffPowerDB and BuffPowerDB.showWindowForSolo then -- Show for solo if option enabled
-        table.insert(effectiveGroupsToDisplay, 1) 
+        table.insert(effectiveGroupsToDisplay, 1)
+    elseif BuffPowerDB and BuffPowerDB.showWindowForSolo then
+        table.insert(effectiveGroupsToDisplay, 1)
     end
 
     if #effectiveGroupsToDisplay == 0 then
         for _, button in pairs(BuffPowerGroupButtons) do if button then button:Hide() end end
-        BuffPowerOrbFrame.container:SetSize(10,10) -- Minimal size
-        BuffPowerOrbFrame:SetSize(30,30) -- Minimal size for anchor
         return
     end
 
-    -- Layout parameters for vertical list
-    local buttonWidth = 80 
-    local buttonHeight = 28
-    local verticalSpacing = 2
-    
-    -- Padding for the container inside the main frame
-    local containerInternalPaddingX = 0 -- No horizontal padding needed for a single column
-    local containerInternalPaddingY = 0 -- No vertical padding needed for a single column
+    -- Layout: anchor at AnchorButton, stack group buttons
+    local displayConfig = (BuffPower.db and BuffPower.db.profile and BuffPower.db.profile.display) or BuffPower.defaults.profile.display
+    local buttonHeight = (displayConfig and displayConfig.buttonHeight) or 28
+    local verticalSpacing = (displayConfig and displayConfig.verticalSpacing) or 2
 
-    -- Hide all buttons initially, then show only the ones needed
-    for _, button in pairs(BuffPowerGroupButtons) do 
-        if button then button:Hide() end
+    for _, button in pairs(BuffPowerGroupButtons) do
+        button:Hide()
+        button:ClearAllPoints()
     end
 
-    local currentYOffset = 0
-    local maxWidth = 0
-
+    local parent = self.AnchorButton
     for i, groupId in ipairs(effectiveGroupsToDisplay) do
         local button = BuffPowerGroupButtons[groupId]
         if button then
-            button:ClearAllPoints()
-            button:SetPoint("TOPLEFT", BuffPowerOrbFrame.container, "TOPLEFT", 0, -currentYOffset)
+            if i == 1 then
+                button:SetPoint("TOP", parent, "BOTTOM", 0, 0)
+            else
+                button:SetPoint("TOP", parent, "BOTTOM", 0, -verticalSpacing)
+            end
             button:Show()
-            BuffPower:UpdateGroupButtonContent(button, groupId) -- Ensure content is up-to-date
-            
-            currentYOffset = currentYOffset + buttonHeight + verticalSpacing
-            maxWidth = math.max(maxWidth, buttonWidth) -- All buttons have same width here
-        else
-            DebugPrint("Button for groupID", groupId, "not found in PositionGroupButtons")
+            BuffPower:UpdateGroupButtonContent(button, groupId)
+            parent = button
         end
     end
-    
-    -- Calculate container size
-    local containerWidth = maxWidth + (containerInternalPaddingX * 2)
-    local containerHeight = math.max(0, currentYOffset - verticalSpacing) + (containerInternalPaddingY * 2) -- Subtract last spacing
-    
-    BuffPowerOrbFrame.container:SetSize(containerWidth, containerHeight)
-    
-    -- Resize main frame (BuffPowerOrbFrame) to fit container plus its own padding/title
-    -- Main frame's SetPoint for container: TOPLEFT, 8, -28
-    local mainFramePaddingX = 8 -- Left padding for container
-    local mainFramePaddingTitle = 28 -- Top padding for container (includes title area)
-    local mainFramePaddingBottom = 8 -- Bottom padding for main frame
-    local mainFramePaddingRight = 8 -- Right padding for main frame
 
-    local totalWidth = containerWidth + mainFramePaddingX + mainFramePaddingRight
-    local totalHeight = containerHeight + mainFramePaddingTitle + mainFramePaddingBottom
-
-    -- Ensure the main frame and its backdrop are always at least as large as the container
-    BuffPowerOrbFrame:SetSize(math.max(totalWidth, 120 + mainFramePaddingX + mainFramePaddingRight), totalHeight)
-    if BuffPowerOrbFrame.SetBackdrop then
-        BuffPowerOrbFrame:SetBackdropColor(0.1, 0.1, 0.1, 0.85)
-    end
-
-    -- Ensure all non-displayed group buttons are hidden
+    -- Hide unused group buttons
     for i=1, MAX_RAID_GROUPS do
         if not tContains(effectiveGroupsToDisplay, i) and BuffPowerGroupButtons[i] then
             BuffPowerGroupButtons[i]:Hide()
@@ -1301,16 +1198,50 @@ function BuffPower:UpdateUI()
              BuffPower:UpdateOrbAppearance() -- Ensure orb appearance is correct when shown
         end
         BuffPower:PositionGroupButtons()
-        -- Enhancement: instantly update member popout if it is shown
-        if BuffPowerGroupMemberFrame and BuffPowerGroupMemberFrame:IsShown() and BuffPowerGroupMemberFrame.UpdateBackdrop then
-            BuffPowerGroupMemberFrame:UpdateBackdrop()
-        end
     else
         if BuffPowerOrbFrame and BuffPowerOrbFrame:IsVisible() then
             BuffPowerOrbFrame:Hide()
             if BuffPowerOrbFrame.backdrop then BuffPowerOrbFrame.backdrop:Hide() end
             if BuffPowerOrbFrame.container then BuffPowerOrbFrame.container:Hide() end
             for _, btn in ipairs(BuffPowerGroupButtons) do if btn then btn:Hide() end end
+        end
+    end
+    -- New: Immediately refresh member popout if open, to avoid laggy update
+    if BuffPower.RefreshMemberPopoutImmediate then
+        BuffPower:RefreshMemberPopoutImmediate()
+    end
+end
+
+-- Refreshes member popout buttons instantly if popout is open
+function BuffPower:RefreshMemberPopoutImmediate()
+    local groupId = BuffPower.MemberPopoutGroupId
+    if not groupId then return end
+    local members = BuffPower:GetGroupMembers(groupId)
+    local groupBuffClass = nil
+    local assignment = (BuffPowerDB and BuffPowerDB.assignments) and BuffPowerDB.assignments[groupId]
+    if assignment and assignment.playerClass then
+        groupBuffClass = assignment.playerClass
+    else
+        local numGroupMembers = GetNumGroupMembers() or 0
+        local _, playerClass = UnitClass("player")
+        if playerClass == "MAGE" or playerClass == "PRIEST" or playerClass == "DRUID" then
+            groupBuffClass = playerClass
+        elseif numGroupMembers == 0 or (not IsInRaid() and groupId == 1) then
+            groupBuffClass = playerClass
+        elseif IsInRaid() then
+            for _, member in ipairs(members) do
+                if member.class == "MAGE" or member.class == "PRIEST" or member.class == "DRUID" then
+                    groupBuffClass = member.class
+                    break
+                end
+            end
+        end
+    end
+    local buffInfo = groupBuffClass and BuffPower.ClassBuffInfo and BuffPower.ClassBuffInfo[groupBuffClass] or nil
+    for idx, member in ipairs(members) do
+        local btn = _G["BuffPowerGroupMemberButton" .. idx]
+        if btn and btn:IsShown() then
+            UpdateMemberButtonAppearance(btn, member, buffInfo, groupBuffClass)
         end
     end
 end
