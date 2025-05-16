@@ -16,7 +16,7 @@ if not AceAddon then
 end
 
 -- Create the addon object using AceAddon-3.0
-local BuffPower = AceAddon:NewAddon(addonName, "AceConsole-3.0", "AceEvent-3.0")
+local BuffPower = AceAddon:NewAddon(addonName, "AceConsole-3.0", "AceEvent-3.0", "AceBucket-3.0", "AceTimer-3.0")
 -- Merge BuffPowerValues static fields into the AceAddon object and preserve the global (fixes static table overwrite bug)
 if _G.BuffPower then
     for k, v in pairs(_G.BuffPower) do BuffPower[k] = v end
@@ -819,14 +819,40 @@ function BuffPower:AssignBufferToGroup(groupId, playerName, playerClass)
     if not BuffPowerDB.assignments then BuffPowerDB.assignments = {} end
     BuffPowerDB.assignments[groupId] = { playerName = playerName, playerClass = playerClass }
     BuffPower:UpdateUI()
-    BuffPower:SendAssignmentUpdate(groupId, playerName, playerClass)
+    -- Debounced assignment sync (throttle message spam to 0.7s, cancel/restart on rapid changes)
+    if self.assignmentSendHandle then
+        self:CancelTimer(self.assignmentSendHandle)
+        self.assignmentSendHandle = nil
+    end
+    self._pendingAssignmentUpdate = { groupId = groupId, playerName = playerName, playerClass = playerClass }
+    self.assignmentSendHandle = self:ScheduleTimer(function()
+        local t = self._pendingAssignmentUpdate
+        if t then
+            BuffPower:SendAssignmentUpdate(t.groupId, t.playerName, t.playerClass)
+            self.assignmentSendHandle = nil
+            self._pendingAssignmentUpdate = nil
+        end
+    end, 0.7)
 end
 
 function BuffPower:ClearGroupAssignment(groupId)
     if BuffPowerDB and BuffPowerDB.assignments and BuffPowerDB.assignments[groupId] then
         BuffPowerDB.assignments[groupId] = nil
         BuffPower:UpdateUI()
-        BuffPower:SendAssignmentUpdate(groupId, "nil", "nil")
+        -- Same debounce as above
+        if self.assignmentSendHandle then
+            self:CancelTimer(self.assignmentSendHandle)
+            self.assignmentSendHandle = nil
+        end
+        self._pendingAssignmentUpdate = { groupId = groupId, playerName = "nil", playerClass = "nil" }
+        self.assignmentSendHandle = self:ScheduleTimer(function()
+            local t = self._pendingAssignmentUpdate
+            if t then
+                BuffPower:SendAssignmentUpdate(t.groupId, t.playerName, t.playerClass)
+                self.assignmentSendHandle = nil
+                self._pendingAssignmentUpdate = nil
+            end
+        end, 0.7)
     end
 end
 
@@ -959,14 +985,24 @@ function BuffPower:OnAddonMessage(prefix, message, channel, sender)
         BuffPowerDB.assignments[gId] = (pName and pClass) and { playerName = pName, playerClass = pClass } or nil
         BuffPower:UpdateUI()
     elseif message == "REQ_ASSIGN" then
-        if BuffPowerDB and BuffPowerDB.assignments and BuffPower:PlayerCanBuff() then
-            for groupId, data in pairs(BuffPowerDB.assignments) do
-                if data and data.playerName and data.playerClass then
-                    local respChannel = IsInRaid() and COMM_CHANNEL_RAID or (IsInGroup() and COMM_CHANNEL_PARTY)
-                    if respChannel then
-                        SendAddonMessage(BuffPower.commPrefix, string.format("ASSIGN_GROUP %d %s %s", groupId, data.playerName, data.playerClass), respChannel)
+        -- Throttle REQ_ASSIGN replies to at most once per second per user.
+        BuffPower.lastAssignmentReplyTime = BuffPower.lastAssignmentReplyTime or 0
+        local now = GetTime()
+        if now - BuffPower.lastAssignmentReplyTime > 1 then
+            BuffPower.lastAssignmentReplyTime = now
+            if BuffPowerDB and BuffPowerDB.assignments and BuffPower:PlayerCanBuff() then
+                for groupId, data in pairs(BuffPowerDB.assignments) do
+                    if data and data.playerName and data.playerClass then
+                        local respChannel = IsInRaid() and COMM_CHANNEL_RAID or (IsInGroup() and COMM_CHANNEL_PARTY)
+                        if respChannel then
+                            SendAddonMessage(BuffPower.commPrefix, string.format("ASSIGN_GROUP %d %s %s", groupId, data.playerName, data.playerClass), respChannel)
+                        end
                     end
                 end
+            end
+        else
+            if BuffPower.debug then
+                print("|cffeda55fBuffPower:|r Throttling assignment REQ_ASSIGN reply (too soon since last reply)")
             end
         end
     end
@@ -1519,12 +1555,21 @@ function BuffPower:UpdateUI()
              BuffPower:UpdateOrbAppearance() -- Ensure orb appearance is correct when shown
         end
         BuffPower:PositionGroupButtons()
+        -- PERF: Ensure periodic UI timer is running
+        if not self.uiRefreshTimer then
+            self.uiRefreshTimer = self:ScheduleRepeatingTimer("RefreshUIVisuals", 1.0)
+        end
     else
         if BuffPowerOrbFrame and BuffPowerOrbFrame:IsVisible() then
             BuffPowerOrbFrame:Hide()
             if BuffPowerOrbFrame.backdrop then BuffPowerOrbFrame.backdrop:Hide() end
             if BuffPowerOrbFrame.container then BuffPowerOrbFrame.container:Hide() end
             for _, btn in ipairs(BuffPowerGroupButtons) do if btn then btn:Hide() end end
+        end
+        -- PERF: Cancel timer if running
+        if self.uiRefreshTimer then
+            self:CancelTimer(self.uiRefreshTimer)
+            self.uiRefreshTimer = nil
         end
     end
     -- New: Immediately refresh member popout if open, to avoid laggy update
@@ -1675,22 +1720,40 @@ function BuffPower:OnEnable()
         return
     end
     self:RegisterEvent("PLAYER_LOGIN")
-    self:RegisterEvent("GROUP_ROSTER_UPDATE")
     self:RegisterEvent("PLAYER_ENTERING_WORLD")
     self:RegisterEvent("CHAT_MSG_ADDON", "OnAddonMessage")
     self:RegisterEvent("ADDON_LOADED")
 
-    -- Enhancement: Register for buffs/debuffs for group UI refresh
-    self:RegisterEvent("UNIT_AURA", "OnAuraEvent")
+    -- Performance: Use AceBucket for high-frequency events (roster, aura)
+    self:RegisterBucketEvent({"GROUP_ROSTER_UPDATE", "UNIT_AURA"}, 0.8, "DebouncedCoreUpdate")
 
     -- Register slash commands with AceConsole-3.0
     self:RegisterChatCommand("buffpower", "ChatCommand")
     self:RegisterChatCommand("bp", "ChatCommand")
 
+    -- Schedule periodic UI updates when the UI is visible via AceTimer. Start timer if needed.
     if BuffPowerDB and BuffPowerDB.showWindow then
         self:CreateUI(); self:UpdateRoster()
+        if not self.uiRefreshTimer then
+            self.uiRefreshTimer = self:ScheduleRepeatingTimer("RefreshUIVisuals", 1.0)
+        end
     end
     DebugPrint("BuffPower Enabled via Ace3.")
+end
+
+-- Debounced roster/group structure update, throttled via AceBucket-3.0.
+function BuffPower:DebouncedCoreUpdate(bucket)
+    -- Only update roster and/or mark UI for layout rebuild as needed.
+    self:UpdateRoster() -- Consider flagging for UI structural rebuild here if large change.
+    -- Do NOT scan all buffs for everyone here! buffs are scanned in RefreshUIVisuals below.
+end
+
+-- Periodically updates buff icons, timers, colors. Runs every 1s when UI is shown.
+function BuffPower:RefreshUIVisuals()
+    -- Iterate UI elements and call usual buff-checking logic for current members.
+    if BuffPowerDB and BuffPowerDB.showWindow then
+        if self.UpdateUI then self:UpdateUI() end
+    end
 end
 
 -- Handler: Updates UI on unit aura change (buff/debuff)
@@ -1702,6 +1765,11 @@ function BuffPower:OnDisable()
     self:UnregisterAllEvents()
     if BuffPowerOrbFrame then BuffPowerOrbFrame:Hide() end
     for _, btn in ipairs(BuffPowerGroupButtons) do if btn then btn:Hide() end end
+    -- PERF: Cancel UI timer if running
+    if self.uiRefreshTimer then
+        self:CancelTimer(self.uiRefreshTimer)
+        self.uiRefreshTimer = nil
+    end
     DebugPrint("BuffPower Disabled.")
 end
 
