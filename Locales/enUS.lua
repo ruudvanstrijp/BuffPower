@@ -28,6 +28,7 @@ L["ASSIGNMENTS"]    = "Assignments"
 L["BUFFS"]          = "Buffs"
 L["UI_LABEL_SAMPLE"]= "Sample Label"
 -- Add new UI/general structure keys below this line.
+L["ANCHOR_LABEL"]   = "BuffPower"
 -- Example: L["YOUR_KEY_NAME"] = "Visible Name"
 -- Do not add spell names, class names, or game logic text here.
 

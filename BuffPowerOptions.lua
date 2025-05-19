@@ -10,7 +10,9 @@ local AceConfigDialog = LibStub("AceConfigDialog-3.0")
 local AceDBOptions = LibStub("AceDBOptions-3.0")
 
 local L = LibStub("AceLocale-3.0"):GetLocale("BuffPower")
-local BuffPower = LibStub("AceAddon-3.0"):GetAddon("BuffPower")
+-- Do NOT create a local BuffPower reference here; always use the global (already initialized) BuffPower
+-- This fixes closure issues and guarantees AceDB is live/consistent across all gets/sets.
+-- local BuffPower = LibStub("AceAddon-3.0"):GetAddon("BuffPower")
 local BuffPower_Buffs = BuffPower_Buffs  -- from BuffPowerValues.lua
 
 -- Main Ace3 options registry table
@@ -92,15 +94,33 @@ for _, class in ipairs(CLASSES) do
 
   -- For each buff: create stub toggle and detailed comment for UI
   for buffKey, buffInfo in pairs(classBuffs) do
+    local _buffKey = buffKey -- localize for closure!
     local locKey = buffInfo.key    -- Localization key e.g. "INTELLECT"
-    classGroup.args["buff_"..buffKey] = {
+    classGroup.args["buff_".._buffKey] = {
       order = 1,
       type = "toggle",             -- Toggle stub: future logic/UI to be implemented
       name = locKey,               -- Use only localization key for label
       desc = locKey.." _DESC",     -- Use only localization key for description
-      get = function() return false end, -- STUB: TODO connect to savedvar
-      set = function(_, val) end,        -- STUB: TODO connect to logic/db
-      -- TODO: When implementing, wire up these toggles to per-buff enable/disable,
+      get = function()
+        local key = "buffcheck_".._buffKey:lower()
+        if BuffPower.db and BuffPower.db.profile and BuffPower.db.profile[key] ~= nil then
+          return BuffPower.db.profile[key]
+        else
+          return true -- default to true
+        end
+      end,
+      set = function(_, val)
+        local key = "buffcheck_".._buffKey:lower()
+        print("[BuffPower][OPTIONS][DEBUG] set:", key, "=", tostring(val), "profileTable:", tostring(BuffPower.db.profile))
+        if BuffPower.db and BuffPower.db.profile then
+          BuffPower.db.profile[key] = (val == true)
+          print("[BuffPower][OPTIONS][DEBUG] Now profile[key]:", key, "=", tostring(BuffPower.db.profile[key]))
+          if BuffPower.UpdateRosterUI then
+            BuffPower:UpdateRosterUI()
+          end
+        end
+      end,
+      -- When implementing, wire up these toggles to per-buff enable/disable,
       -- and consider per-group, per-class, and assignment responsibilities.
     }
 
