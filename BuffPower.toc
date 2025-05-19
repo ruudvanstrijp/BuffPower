@@ -1,0 +1,14 @@
+## Interface: 11507
+## Title: BuffPower
+## Author: BuffPower Team
+## Version: 0.1.0
+## Notes: Utility framework for raid and party management (minimal, alpha)
+## DefaultState: enabled
+
+embeds.xml
+Locales/enUS.lua
+
+BuffPower.lua
+BuffPowerValues.lua
+BuffPowerOptions.lua
+BuffPower.xml
