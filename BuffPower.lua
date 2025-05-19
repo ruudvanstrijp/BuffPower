@@ -241,14 +241,14 @@ function BuffPower:CreateAnchorFrame()
     for group = 1, NUM_GROUPS do
         -- Create a group header FRAME (not FontString, so we can use mouse events)
         local groupHeader = CreateFrame("Frame", nil, f, BackdropTemplateMixin and "BackdropTemplate")
-        groupHeader:SetSize(COL_WIDTH, HEADER_HEIGHT)
+        groupHeader:SetSize(120, 32)
         -- Set backdrop for visual feedback on hover
         groupHeader:SetBackdrop({
-            bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+            bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
             edgeSize = 8, insets = {left=1, right=1, top=1, bottom=1}
         })
-        groupHeader:SetBackdropColor(0.15, 0.15, 0.30, 0.7)
+        groupHeader:SetBackdropColor(0.2, 1, 0.2, 0.6) -- PallyPower green style (default)
 
         -- Y-stack: anchor each group below previous, first is at top offset from anchor frame
         if group == 1 then
@@ -263,7 +263,7 @@ function BuffPower:CreateAnchorFrame()
         groupHeader.buffIcons = {}
         for iconIdx = 1, 5 do
             local icon = groupHeader:CreateTexture(nil, "ARTWORK")
-            icon:SetSize(14, 14)
+            icon:SetSize(16, 16)
             icon:SetPoint("RIGHT", groupHeader, "RIGHT", -(iconIdx-1)*16, 0)
             icon:SetAlpha(0)
             groupHeader.buffIcons[iconIdx] = icon
@@ -280,7 +280,7 @@ function BuffPower:CreateAnchorFrame()
         -- Player row stubs: create but hide, show only on mouseover
         for row = 1, ROWS_PER_GROUP do
             local playerRow = CreateFrame("Frame", nil, groupHeader, BackdropTemplateMixin and "BackdropTemplate")
-            playerRow:SetSize(COL_WIDTH, ROW_HEIGHT)
+            playerRow:SetSize(120, 32)
             -- Backdrop needed for SetBackdropColor (always set, even if alpha 0)
             playerRow:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
             playerRow:SetBackdropColor(0, 0, 0, 0)
@@ -294,7 +294,7 @@ function BuffPower:CreateAnchorFrame()
             playerRow.buffIcons = {}
             for iconIdx = 1, 5 do
                 local icon = playerRow:CreateTexture(nil, "ARTWORK")
-                icon:SetSize(14, 14) -- square
+                icon:SetSize(16, 16) -- square
                 icon:SetPoint("RIGHT", playerRow, "RIGHT", -(iconIdx-1)*16, 0)
                 icon:SetAlpha(0) -- hide by default
                 playerRow.buffIcons[iconIdx] = icon
@@ -313,11 +313,13 @@ function BuffPower:CreateAnchorFrame()
         -- Mouseover logic for showing player rows
         groupHeader:SetScript("OnEnter", function(self)
             for _, rowFrame in ipairs(groupRows[group]) do rowFrame:Show() end
-            groupHeader:SetBackdropColor(0.25, 0.25, 0.48, 1)
+            -- No hover color: preserve current background (green/red per group status)
+            -- DO NOT set any backdrop color
         end)
         groupHeader:SetScript("OnLeave", function(self)
             for _, rowFrame in ipairs(groupRows[group]) do rowFrame:Hide() end
-            groupHeader:SetBackdropColor(0.15, 0.15, 0.30, 0.7)
+            -- No hover color: preserve current background (green/red per group status)
+            -- DO NOT set any backdrop color
         end)
 
         -- Hide player rows initially (just to be sure)
@@ -538,22 +540,38 @@ function BuffPower:UpdateRosterUI()
                             if not HasAnyBuffByName(info.unit, buffData.spellNames) then
                                 needsAny = true
                                 break
+                            else
+                                -- Nothing here; green logic will be handled after needsAny check
                             end
                         end
-                    end
+                        end
                 end
                 if needsAny then
                     -- Show "needs buff" by tinting background and/or marking label
                     playerRow:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8x8"})
-                    playerRow:SetBackdropColor(0.9, 0.2, 0.2, 0.25)
+                    playerRow:SetBackdropColor(1, 0.15, 0.15, 0.5) -- PallyPower red style
                     label:SetText(info.name or "")
                     groupNeedsBuff = true
+                else
+                    -- All buffs present: set green background
+                    playerRow:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8x8"})
+                    playerRow:SetBackdropColor(0.2, 1, 0.2, 0.6) -- PallyPower green style
                 end
             else
                 label:SetText("")
             end
         end
         -- Group-level buff icons: show group/rank-appropriate group version of each enabled buff, left to right
+        -- Ensure groupHeader always has solid base and color
+        if groupHeader then
+            groupHeader:SetBackdrop({
+                bgFile = "Interface\\Buttons\\WHITE8x8",
+                edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+                edgeSize = 8, insets = {left=1, right=1, top=1, bottom=1}
+            })
+            -- Temporary green; will override with red below if groupNeedsBuff
+            groupHeader:SetBackdropColor(0.2, 1, 0.2, 0.6)
+        end
         local groupHeader = anchor.GroupHeaders and anchor.GroupHeaders[g]
         local enabledBuffListGroup = {}
         if PLAYER_CLASS == "PRIEST" then
@@ -651,12 +669,11 @@ function BuffPower:UpdateRosterUI()
                     groupHeader.label:SetPoint("LEFT", groupHeader, "LEFT", 5, 0)
                     groupHeader.label:SetPoint("RIGHT", groupHeader, "RIGHT")
                     if groupNeedsBuff then
-                        groupHeader:SetBackdropColor(0.9, 0.2, 0.2, 0.22)
+                        groupHeader:SetBackdropColor(1, 0.15, 0.15, 0.5) -- PallyPower red style
                         groupHeader.label:SetText("Group "..g)
                     else
-                        groupHeader:SetBackdropColor(0.15, 0.15, 0.30, 0.7)
+                        groupHeader:SetBackdropColor(0.2, 1, 0.2, 0.6) -- PallyPower green style
                         groupHeader.label:SetText("Group "..g)
-                    end
                 end
             end
         end
@@ -674,10 +691,10 @@ function BuffPower:UpdateRosterUI()
             groupHeader.label:SetPoint("LEFT", groupHeader, "LEFT", 5, 0)
             groupHeader.label:SetPoint("RIGHT", groupHeader, "RIGHT")
             if groupNeedsBuff then
-                groupHeader:SetBackdropColor(0.9, 0.2, 0.2, 0.22)
+                groupHeader:SetBackdropColor(1, 0.15, 0.15, 0.5) -- PallyPower red style
                 groupHeader.label:SetText("Group "..g)
             else
-                groupHeader:SetBackdropColor(0.15, 0.15, 0.30, 0.7)
+                groupHeader:SetBackdropColor(0.2, 1, 0.2, 0.6) -- PallyPower green style
                 groupHeader.label:SetText("Group "..g)
             end
         end
@@ -686,3 +703,4 @@ end
 
 
 -- End BuffPower skeleton.
+end
