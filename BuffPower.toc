@@ -5,6 +5,8 @@
 ## Notes: Utility framework for raid and party management (minimal, alpha)
 ## DefaultState: enabled
 
+## SavedVariables: BuffPowerDB
+
 embeds.xml
 Locales/enUS.lua
 
