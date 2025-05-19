@@ -406,301 +406,250 @@ function BuffPower:UpdateRosterUI()
 
     local inRaid = IsInRaid()
     for g = 1, 8 do
-        local visibleIcons = 0 -- always defined
+        local groupHeader = anchor.GroupHeaders and anchor.GroupHeaders[g]
+        local groupRowsForGroup = anchor.GroupRows[g]
+
         if (not inRaid) and g > 1 then
-            local groupHeader = anchor.GroupHeaders and anchor.GroupHeaders[g]
             if groupHeader then groupHeader:Hide() end
-            if anchor.GroupRows[g] then
-                for _, rowFrame in ipairs(anchor.GroupRows[g]) do rowFrame:Hide() end
+            if groupRowsForGroup then
+                for _, rowFrame in ipairs(groupRowsForGroup) do rowFrame:Hide() end
             end
-            -- Do nothing else for this group!
-        else
-            local groupHeader = anchor.GroupHeaders and anchor.GroupHeaders[g]
+        else -- Group is active (in raid, or group 1 if not in raid)
             if groupHeader then groupHeader:Show() end
             local groupNeedsBuff = false
-            for r = 1, #anchor.GroupRows[g] do
-                local playerRow = anchor.GroupRows[g][r]
-                local label = playerRow.label
-                local info = roster[g][r]
-                -- Reset visuals
-                playerRow:SetBackdropColor(0,0,0,0)
-                if info then
-                -- Color by class
-                if CLASS_COLORS and CLASS_COLORS[info.file] then
-                    label:SetTextColor(CLASS_COLORS[info.file].r, CLASS_COLORS[info.file].g, CLASS_COLORS[info.file].b)
-                else
-                    label:SetTextColor(1,1,1)
-                end
-                label:SetText(info.name)
-                -- Display buff icons for all enabled buffs (single version, per member)
-                local enabledBuffList = {}
+
+            -- Process Player Rows for this group
+            if groupRowsForGroup then
+                for r = 1, #groupRowsForGroup do
+                    local playerRow = groupRowsForGroup[r]
+                    local label = playerRow.label
+                    local info = roster[g][r]
+
+                    playerRow:SetBackdropColor(0,0,0,0) -- Reset visuals
+
+                    if info then
+                        -- Color by class
+                        if CLASS_COLORS and CLASS_COLORS[info.file] then
+                            label:SetTextColor(CLASS_COLORS[info.file].r, CLASS_COLORS[info.file].g, CLASS_COLORS[info.file].b)
+                        else
+                            label:SetTextColor(1,1,1)
+                        end
+                        label:SetText(info.name)
+
+                        -- Display player buff icons
+                        local enabledBuffList = {}
+                        if PLAYER_CLASS == "PRIEST" then
+                            local ordered = {"FORTITUDE", "SPIRIT", "SHADOW_PROTECTION"}
+                            for i = #ordered, 1, -1 do
+                                local buffKey = ordered[i]
+                                local profileKey = "buffcheck_"..buffKey:lower()
+                                if buffsTable[buffKey] and profile[profileKey] ~= false then
+                                    table.insert(enabledBuffList, buffKey)
+                                end
+                            end
+                        else
+                            for buffKey, buffData in pairs(buffsTable) do
+                                local profileKey = "buffcheck_"..buffKey:lower()
+                                if profile[profileKey] ~= false then
+                                    table.insert(enabledBuffList, buffKey)
+                                end
+                            end
+                        end
+
+                        local visiblePlayerIcons = 0
+                        for iconIdx = 1, 5 do
+                            local icon = playerRow.buffIcons and playerRow.buffIcons[iconIdx]
+                            if icon and enabledBuffList[iconIdx] then
+                                local buffKey = enabledBuffList[iconIdx]
+                                local buffData = buffsTable[buffKey]
+                                local singleID = buffData and buffData.spellIDs and buffData.spellIDs[#buffData.spellIDs]
+                                local texture = singleID and select(3, GetSpellInfo(singleID))
+                                icon:SetAlpha(1)
+                                if texture then
+                                    icon:SetTexture(texture)
+                                else
+                                    icon:SetTexture(nil)
+                                end
+                                local missing = buffData and buffData.spellNames and #buffData.spellNames > 0 and (not HasAnyBuffByName(info.unit, buffData.spellNames))
+                                if missing then
+                                    icon:SetDesaturated(true)
+                                    icon:SetVertexColor(1, 0.2, 0.2)
+                                else
+                                    icon:SetDesaturated(false)
+                                    icon:SetVertexColor(1, 1, 1)
+                                end
+                                icon:Show()
+                                visiblePlayerIcons = visiblePlayerIcons + 1
+                            elseif icon then
+                                icon:SetAlpha(0)
+                                icon:Hide()
+                            end
+                        end
+                        playerRow.label:ClearAllPoints()
+                        playerRow.label:SetPoint("LEFT", playerRow, "LEFT", 5, 0)
+                        playerRow.label:SetPoint("RIGHT", playerRow, "RIGHT")
+
+                        -- Buff detection for this player
+                        local needsAnyPlayerBuff = false
+                        if PLAYER_CLASS == "PRIEST" then
+                            local anyMissing = false
+                            for buffKey, buffData in pairs(buffsTable) do
+                                local profileKey = "buffcheck_"..buffKey:lower()
+                                local enabled = profile[profileKey] ~= false
+                                local missing = enabled and buffData.spellNames and #buffData.spellNames > 0 and (not HasAnyBuffByName(info.unit, buffData.spellNames))
+                                -- Debug print logic removed for brevity, can be re-added if needed
+                                if missing then
+                                    anyMissing = true
+                                end
+                            end
+                            needsAnyPlayerBuff = anyMissing
+                        elseif PLAYER_CLASS == "MAGE" then
+                            local buffData = buffsTable.INTELLECT
+                            local enabled = profile["buffcheck_intellect"] ~= false
+                            if enabled and buffData and buffData.spellNames and #buffData.spellNames > 0 then
+                                if not HasAnyBuffByName(info.unit, buffData.spellNames) then
+                                    needsAnyPlayerBuff = true
+                                end
+                            end
+                        elseif PLAYER_CLASS == "DRUID" then
+                            for buffKey, buffData in pairs(buffsTable) do
+                                local enabled = profile["buffcheck_"..buffKey:lower()] ~= false
+                                if enabled and buffData.spellNames and #buffData.spellNames > 0 then
+                                    if not HasAnyBuffByName(info.unit, buffData.spellNames) then
+                                        needsAnyPlayerBuff = true
+                                        break
+                                    end
+                                end
+                            end
+                        end
+
+                        if needsAnyPlayerBuff then
+                            playerRow:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8x8"})
+                            playerRow:SetBackdropColor(1, 0.15, 0.15, 0.5) -- PallyPower red style
+                            label:SetText(info.name or "")
+                            groupNeedsBuff = true -- Mark the group as needing a buff
+                        else
+                            playerRow:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8x8"})
+                            playerRow:SetBackdropColor(0.2, 1, 0.2, 0.6) -- PallyPower green style
+                        end
+                    else -- No player info for this row
+                        label:SetText("")
+                    end
+                end -- End of player row loop
+            end -- End of check for groupRowsForGroup
+
+            -- Process Group Header for this group
+            if groupHeader then
+                groupHeader:SetBackdrop({
+                    bgFile = "Interface\\Buttons\\WHITE8x8",
+                    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+                    edgeSize = 8, insets = {left=1, right=1, top=1, bottom=1}
+                })
+                -- Default to green, will be overridden if groupNeedsBuff is true
+                groupHeader:SetBackdropColor(0.2, 1, 0.2, 0.6)
+
+                local enabledBuffListGroup = {}
                 if PLAYER_CLASS == "PRIEST" then
                     local ordered = {"FORTITUDE", "SPIRIT", "SHADOW_PROTECTION"}
                     for i = #ordered, 1, -1 do
                         local buffKey = ordered[i]
                         local profileKey = "buffcheck_"..buffKey:lower()
                         if buffsTable[buffKey] and profile[profileKey] ~= false then
-                            table.insert(enabledBuffList, buffKey)
+                            table.insert(enabledBuffListGroup, buffKey)
                         end
                     end
                 else
                     for buffKey, buffData in pairs(buffsTable) do
                         local profileKey = "buffcheck_"..buffKey:lower()
                         if profile[profileKey] ~= false then
-                            table.insert(enabledBuffList, buffKey)
+                            table.insert(enabledBuffListGroup, buffKey)
                         end
                     end
                 end
-                local visibleIcons = 0
-                for iconIdx = 1, 5 do
-                    local icon = playerRow.buffIcons and playerRow.buffIcons[iconIdx]
-                    if icon and enabledBuffList[iconIdx] then
-                        local buffKey = enabledBuffList[iconIdx]
-                        local buffData = buffsTable[buffKey]
-                        -- Find first spellID for single-target (lowest rank, highest ID, usually single; group buff handled at group level)
-                        local singleID = buffData and buffData.spellIDs and buffData.spellIDs[#buffData.spellIDs]
-                        local texture = singleID and select(3, GetSpellInfo(singleID))
-                        icon:SetAlpha(1)
-                        if texture then
-                            icon:SetTexture(texture)
-                        else
-                            icon:SetTexture(nil)
-                        end
-                        -- Set desaturation and color (red if missing)
-                        local missing = buffData and buffData.spellNames and #buffData.spellNames > 0 and (not HasAnyBuffByName(info.unit, buffData.spellNames))
-                        if missing then
-                            icon:SetDesaturated(true)
-                            icon:SetVertexColor(1, 0.2, 0.2)
-                        else
-                            icon:SetDesaturated(false)
-                            icon:SetVertexColor(1, 1, 1)
-                        end
-                        icon:Show()
-                        visibleIcons = visibleIcons + 1
-                    elseif icon then
-                        icon:SetAlpha(0)
-                        icon:Hide()
-                    end
-                end
-                -- Dynamically position label so it’s just to the right of the last visible icon (or at 5 if none)
-                -- label always left aligned; no dynamic offset now that icons are right-anchored
-                playerRow.label:ClearAllPoints()
-                playerRow.label:SetPoint("LEFT", playerRow, "LEFT", 5, 0)
-                playerRow.label:SetPoint("RIGHT", playerRow, "RIGHT")
 
-                -- Buff detection per class' buff definition
-                -- Check enabled buffs only, per user-determined profile switches
-                local needsAny = false
-                -- profile already declared; do not shadow or redefine
-                -- REMOVE: Print full profile debug unless a toggle state actually changed
-                -- (No more per-update spam)
-                if PLAYER_CLASS == "PRIEST" then
-                    -- DEBUG: print all buff keys
-                    -- Only print keys if options structure changes, not every update
-                    local keysStr = table.concat((function(t) local keys={} for k in pairs(t) do table.insert(keys, k) end; return keys end)(buffsTable), ", ")
-                    BuffPower._sessionDebug = BuffPower._sessionDebug or {}
-                    local _sd = BuffPower._sessionDebug
-                    local lastKeys = _sd.lastBuffKeys
-                    if lastKeys ~= keysStr then
-                        print("[BuffPower][DEBUG] buffsTable keys:", keysStr)
-                        _sd.lastBuffKeys = keysStr
-                    end
-                    -- To reduce log spam, only print enabled/missing if a toggle state or buff status changes
-                    local anyMissing = false
-                    local lastDebug = _sd.lastDebug or {}
-                    for buffKey, buffData in pairs(buffsTable) do
-                        local profileKey = "buffcheck_"..buffKey:lower()
-                        local enabled = profile[profileKey] ~= false
-                        local missing = enabled and buffData.spellNames and #buffData.spellNames > 0 and (not HasAnyBuffByName(info.unit, buffData.spellNames))
-                        if lastDebug[buffKey] == nil
-                           or lastDebug[buffKey].enabled ~= enabled
-                           or lastDebug[buffKey].missing ~= missing
-                        then
-                          print("[BuffPower][DEBUG] check buff:", buffKey, "profileKey:", profileKey, "enabled:", tostring(enabled), "missing:", tostring(missing))
-                          lastDebug[buffKey] = { enabled = enabled, missing = missing }
-                          _sd.lastDebug = lastDebug
-                        end
-                        if missing then
-                            anyMissing = true
-                        end
-                    end
-                    needsAny = anyMissing
-                elseif PLAYER_CLASS == "MAGE" then
-                    local buffData = buffsTable.INTELLECT
-                    local enabled = profile["buffcheck_intellect"] ~= false
-                    if enabled and buffData and buffData.spellNames and #buffData.spellNames > 0 then
-                        if not HasAnyBuffByName(info.unit, buffData.spellNames) then
-                            needsAny = true
-                        end
-                    end
-                elseif PLAYER_CLASS == "DRUID" then
-                    for buffKey, buffData in pairs(buffsTable) do
-                        local enabled = profile["buffcheck_"..buffKey:lower()] ~= false
-                        if enabled and buffData.spellNames and #buffData.spellNames > 0 then
-                            if not HasAnyBuffByName(info.unit, buffData.spellNames) then
-                                needsAny = true
-                                break
-                            else
-                                -- Nothing here; green logic will be handled after needsAny check
-                            end
-                        end
-                        end
-                end
-                if needsAny then
-                    -- Show "needs buff" by tinting background and/or marking label
-                    playerRow:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8x8"})
-                    playerRow:SetBackdropColor(1, 0.15, 0.15, 0.5) -- PallyPower red style
-                    label:SetText(info.name or "")
-                    groupNeedsBuff = true
-                else
-                    -- All buffs present: set green background
-                    playerRow:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8x8"})
-                    playerRow:SetBackdropColor(0.2, 1, 0.2, 0.6) -- PallyPower green style
-                end
-            else
-                label:SetText("")
-            end
-        end
-        -- Group-level buff icons: show group/rank-appropriate group version of each enabled buff, left to right
-        -- Ensure groupHeader always has solid base and color
-        if groupHeader then
-            groupHeader:SetBackdrop({
-                bgFile = "Interface\\Buttons\\WHITE8x8",
-                edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-                edgeSize = 8, insets = {left=1, right=1, top=1, bottom=1}
-            })
-            -- Temporary green; will override with red below if groupNeedsBuff
-            groupHeader:SetBackdropColor(0.2, 1, 0.2, 0.6)
-        end
-        local groupHeader = anchor.GroupHeaders and anchor.GroupHeaders[g]
-        local enabledBuffListGroup = {}
-        if PLAYER_CLASS == "PRIEST" then
-            local ordered = {"FORTITUDE", "SPIRIT", "SHADOW_PROTECTION"}
-            for i = #ordered, 1, -1 do
-                local buffKey = ordered[i]
-                local profileKey = "buffcheck_"..buffKey:lower()
-                if buffsTable[buffKey] and profile[profileKey] ~= false then
-                    table.insert(enabledBuffListGroup, buffKey)
-                end
-            end
-        else
-            for buffKey, buffData in pairs(buffsTable) do
-                local profileKey = "buffcheck_"..buffKey:lower()
-                if profile[profileKey] ~= false then
-                    table.insert(enabledBuffListGroup, buffKey)
-                end
-            end
-        end
-        if groupHeader and groupHeader.buffIcons then
-            -- Cleaned: no debug prints -- group icon construction is now robust, fallback is permanent
-            for iconIdx = 1, 5 do
-                local icon = groupHeader.buffIcons[iconIdx]
-                if icon and enabledBuffListGroup[iconIdx] then
-                    local buffKey = enabledBuffListGroup[iconIdx]
-                    local buffData = buffsTable[buffKey]
-                    -- If no real group version, use single version for group icon logic.
-                    local groupSpellID = (buffData and buffData.spellIDs and #buffData.spellIDs > 1)
-                        and buffData.spellIDs[1]
-                        or (buffData and buffData.spellIDs and buffData.spellIDs[#buffData.spellIDs])
-                    local texture = groupSpellID and select(3, GetSpellInfo(groupSpellID))
-                    icon:SetAlpha(1)
-                    if texture then
-                        icon:SetTexture(texture)
-                        icon:Show()
-                    else
-                        -- Fallback: use hardcoded icon for Shadow Protection
-                        if buffKey == "SHADOW_PROTECTION" then
-                            icon:SetTexture("Interface\\Icons\\Spell_Shadow_AntiShadow")
-                        else
-                            icon:SetTexture(nil)
-                        end
-                        icon:Show()
-                    end
-                    -- Desaturate if any player in group missing the GROUP version (if available),
-                    -- or if only single-buff exists, missing single.
-                    local groupMissing = false
-                    local onlySingle = buffData and buffData.spellIDs and #buffData.spellIDs == 1
-                    local groupSpellName = onlySingle and buffData.spellNames and buffData.spellNames[1] or (buffData.spellIDs and GetSpellInfo(buffData.spellIDs[1]))
-                    for r = 1, #anchor.GroupRows[g] do
-                        local playerInfo = roster[g][r]
-                        if playerInfo and buffData and buffData.spellNames and #buffData.spellNames > 0 then
-                            if onlySingle then
-                                if not HasAnyBuffByName(playerInfo.unit, buffData.spellNames) then
-                                    groupMissing = true
-                                    break
-                                end
-                            else
-                                -- Group version: buff is present if player has either group or single version
-                                -- (so icons show colored if single buffs are present!)
-                                local allSpellNames = {}
-                                -- Use all group & single names for this buff
-                                if buffData and buffData.spellNames then
-                                    for _, n in ipairs(buffData.spellNames) do table.insert(allSpellNames, n) end
-                                end
-                                if not HasAnyBuffByName(playerInfo.unit, allSpellNames) then
-                                    groupMissing = true
-                                    break
-                                end
-                            end
-                        end
-                    end
-                    if groupMissing then
-                        icon:SetDesaturated(true)
-                        icon:SetVertexColor(1, 0.2, 0.2)
-                    else
-                        icon:SetDesaturated(false)
-                        icon:SetVertexColor(1, 1, 1)
-                    end
-                    icon:Show()
-                elseif icon then
-                    icon:SetAlpha(0)
-                    icon:Hide()
-                end
-                -- Only update label position and color for visible group header
-                if groupHeader and groupHeader.label and groupHeader:IsShown() then
-                    local visibleIcons = 0
+                if groupHeader.buffIcons then
+                    local visibleGroupIcons = 0
                     for iconIdx = 1, 5 do
-                        local icon = groupHeader.buffIcons and groupHeader.buffIcons[iconIdx]
-                        if icon and icon:IsShown() and icon:GetTexture() then
-                            visibleIcons = iconIdx
+                        local icon = groupHeader.buffIcons[iconIdx]
+                        if icon and enabledBuffListGroup[iconIdx] then
+                            local buffKey = enabledBuffListGroup[iconIdx]
+                            local buffData = buffsTable[buffKey]
+                            local groupSpellID = (buffData and buffData.spellIDs and #buffData.spellIDs > 1)
+                                and buffData.spellIDs[1]
+                                or (buffData and buffData.spellIDs and buffData.spellIDs[#buffData.spellIDs])
+                            local texture = groupSpellID and select(3, GetSpellInfo(groupSpellID))
+                            icon:SetAlpha(1)
+                            if texture then
+                                icon:SetTexture(texture)
+                            else
+                                if buffKey == "SHADOW_PROTECTION" then
+                                    icon:SetTexture("Interface\\Icons\\Spell_Shadow_AntiShadow")
+                                else
+                                    icon:SetTexture(nil)
+                                end
+                            end
+
+                            local groupIconMissingBuff = false
+                            local onlySingle = buffData and buffData.spellIDs and #buffData.spellIDs == 1
+                            -- local groupSpellName = onlySingle and buffData.spellNames and buffData.spellNames[1] or (buffData.spellIDs and GetSpellInfo(buffData.spellIDs[1])) -- Not directly used for logic here
+
+                            if groupRowsForGroup then -- Ensure roster data is available
+                                for rIdx = 1, #groupRowsForGroup do
+                                    local playerInfo = roster[g][rIdx]
+                                    if playerInfo and buffData and buffData.spellNames and #buffData.spellNames > 0 then
+                                        if onlySingle then
+                                            if not HasAnyBuffByName(playerInfo.unit, buffData.spellNames) then
+                                                groupIconMissingBuff = true
+                                                break
+                                            end
+                                        else
+                                            local allSpellNames = {}
+                                            if buffData and buffData.spellNames then
+                                                for _, n in ipairs(buffData.spellNames) do table.insert(allSpellNames, n) end
+                                            end
+                                            if not HasAnyBuffByName(playerInfo.unit, allSpellNames) then
+                                                groupIconMissingBuff = true
+                                                break
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+
+                            if groupIconMissingBuff then
+                                icon:SetDesaturated(true)
+                                icon:SetVertexColor(1, 0.2, 0.2)
+                            else
+                                icon:SetDesaturated(false)
+                                icon:SetVertexColor(1, 1, 1)
+                            end
+                            icon:Show()
+                            visibleGroupIcons = iconIdx -- Track the last visible icon index
+                        elseif icon then
+                            icon:SetAlpha(0)
+                            icon:Hide()
                         end
-                    end
-                    groupHeader.label:ClearAllPoints()
-                    groupHeader.label:SetPoint("LEFT", groupHeader, "LEFT", 5, 0)
-                    groupHeader.label:SetPoint("RIGHT", groupHeader, "RIGHT")
-                    if groupNeedsBuff then
-                        groupHeader:SetBackdropColor(1, 0.15, 0.15, 0.5) -- PallyPower red style
+                    end -- End of group header icon loop
+
+                    -- Update group header label position and color
+                    if groupHeader.label and groupHeader:IsShown() then
+                        -- visibleGroupIcons now correctly reflects the index of the last shown icon,
+                        -- or 0 if no icons are shown. This can be used for dynamic label positioning if needed in future.
+                        -- For now, keeping the static positioning.
+                        groupHeader.label:ClearAllPoints()
+                        groupHeader.label:SetPoint("LEFT", groupHeader, "LEFT", 5, 0)
+                        groupHeader.label:SetPoint("RIGHT", groupHeader, "RIGHT")
+
+                        if groupNeedsBuff then
+                            groupHeader:SetBackdropColor(1, 0.15, 0.15, 0.5) -- PallyPower red style
+                        else
+                            groupHeader:SetBackdropColor(0.2, 1, 0.2, 0.6) -- PallyPower green style
+                        end
                         groupHeader.label:SetText("Group "..g)
-                    else
-                        groupHeader:SetBackdropColor(0.2, 1, 0.2, 0.6) -- PallyPower green style
-                        groupHeader.label:SetText("Group "..g)
-                end
-            end
-        end
-        if groupHeader and groupHeader.label then
-            -- Calculate actual number of visible icons
-            local visibleIcons = 0
-            for iconIdx = 1, 5 do
-                local icon = groupHeader.buffIcons and groupHeader.buffIcons[iconIdx]
-                if icon and icon:IsShown() and icon:GetTexture() then
-                    visibleIcons = iconIdx
-                end
                     end
-                end
-            groupHeader.label:ClearAllPoints()
-            groupHeader.label:SetPoint("LEFT", groupHeader, "LEFT", 5, 0)
-            groupHeader.label:SetPoint("RIGHT", groupHeader, "RIGHT")
-            if groupNeedsBuff then
-                groupHeader:SetBackdropColor(1, 0.15, 0.15, 0.5) -- PallyPower red style
-                groupHeader.label:SetText("Group "..g)
-            else
-                groupHeader:SetBackdropColor(0.2, 1, 0.2, 0.6) -- PallyPower green style
-                groupHeader.label:SetText("Group "..g)
-            end
-        end
-    end
+                end -- End of check for groupHeader.buffIcons
+            end -- End of check for groupHeader
+        end -- End of active group processing (else branch)
+    end -- End of main group loop (g = 1, 8)
 end
-
-
 -- End BuffPower skeleton.
-end
