@@ -286,10 +286,7 @@ function BuffPower:CreateAnchorFrame()
     end)
     f:SetScript("OnMouseUp", function(frame, button)
       if button == "RightButton" then
-        if InterfaceOptionsFrame_OpenToCategory then
-          InterfaceOptionsFrame_OpenToCategory("BuffPower")
-          InterfaceOptionsFrame_OpenToCategory("BuffPower") -- Call twice to ensure it opens
-        end
+        AceConfigDialog:Open("BuffPower")
       end
     end)
 
