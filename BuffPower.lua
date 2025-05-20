@@ -14,7 +14,7 @@ local AceConsole = LibStub("AceConsole-3.0")
 local AceEvent = LibStub("AceEvent-3.0")
 
 BuffPower = AceAddon:NewAddon("BuffPower", "AceConsole-3.0", "AceEvent-3.0")
--- TODO: Support for modular extensions via AceAddon
+-- TODO: Support for modular extensions via AceAddon (Not Implemented)
 
 -- External libraries (stubs for future use)
 local AceDB = LibStub("AceDB-3.0")
@@ -32,7 +32,7 @@ BuffPower.db = nil
 -- OnInitialize: called once per session after savedvars loaded.
 -------------------------------------------------------------------------------
 function BuffPower:OnInitialize()
-    -- TODO: Register saved variables / database (AceDB-3.0)
+    -- DONE: Register saved variables / database (AceDB-3.0)
     -- AceDB defaults: ensure all buff toggles default to enabled, plus anchor position
     local buffDefaults = {}
     if BuffPower_Buffs then
@@ -48,41 +48,22 @@ function BuffPower:OnInitialize()
         char = {}
         -- anchor not allowed in AceDB defaults, handle fallback in code below!
     }, true)
-    self:RegisterOptions()
+    -- self:RegisterOptions() -- Removed call to empty placeholder
 
     self:RegisterChatCommand("bp", function()
       AceConfigDialog:Open("BuffPower")
     end)
 
-    -- TODO: Register events (e.g., PLAYER_LOGIN, etc.)
+    -- DONE: Register events (e.g., PLAYER_LOGIN, etc.)
     self:RegisterEvents()
 
-    -- TODO: Register persistent minimap icon (LibDBIcon-1.0)
+    -- TODO: Register persistent minimap icon (LibDBIcon-1.0) (Not Implemented)
 
-    -- TODO: Set up comm channel prefix (AceComm-3.0)
+    -- PARTIALLY DONE: Set up comm channel prefix (AceComm-3.0) (SetupComm function has further TODO)
     self:SetupComm()
 
-    -- TODO: Load persistent user options and initialize UI as needed
-    self:SetupUI()
-end
-
--------------------------------------------------------------------------------
--- Placeholder: UI Setup
--------------------------------------------------------------------------------
-function BuffPower:SetupUI()
-    -- TODO: Create and anchor all root UI frames (bars, panels, group display, etc)
-    -- TODO: Register UI with options window (AceConfigDialog)
-end
-
--------------------------------------------------------------------------------
--- Placeholder: Options Registration
--------------------------------------------------------------------------------
-function BuffPower:RegisterOptions()
-    -- Actual options registration should be in BuffPowerOptions.lua
-    -- This function in BuffPower.lua can remain a placeholder or be used for
-    -- any addon-specific setup needed before BuffPowerOptions.lua defines the table.
-    -- For now, ensure BuffPowerOptions.lua is loaded and does its job.
-    -- If BuffPowerOptions.lua itself calls AceConfig:RegisterOptionsTable, this is fine.
+    -- DONE: Load persistent user options and initialize UI as needed
+    -- self:SetupUI() -- Removed call to empty placeholder
 end
 
 -------------------------------------------------------------------------------
@@ -116,15 +97,15 @@ end
 -- Placeholder: AceComm Setup
 -------------------------------------------------------------------------------
 function BuffPower:SetupComm()
-    -- TODO: Register AceComm prefix/channel for group comms
+    -- TODO: Register AceComm prefix/channel for group comms (Not Implemented - self:RegisterComm is commented out)
     -- self:RegisterComm("BuffPower")
 end
 
 -------------------------------------------------------------------------------
--- TODO: Assignment System (future), syncing, localization hooks, etc.
--- TODO: Implement core assignment algorithms and comm logic in separate modules.
--- TODO: Implement group frames and display logic in UI module(s).
--- TODO: Integrate localization using AceLocale-3.0 or similar.
+-- TODO: Assignment System (future), syncing, localization hooks, etc. (Not Implemented)
+-- TODO: Implement core assignment algorithms and comm logic in separate modules. (Not Implemented)
+-- PARTIALLY DONE: Implement group frames and display logic in UI module(s). (Implemented in main file, not separate modules)
+-- DONE: Integrate localization using AceLocale-3.0 or similar.
 -------------------------------------------------------------------------------
 
 -------------------------------------------------------------------------------
@@ -169,7 +150,8 @@ local function _CreateGroupHeaderFrame(groupIndex, parentFrame, previousHeader, 
         -- Position Group 1 directly below the parentFrame (the anchor)
         groupHeader:SetPoint("TOPLEFT", parentFrame, "BOTTOMLEFT", 0, -constants.V_SPACING)
     else
-        groupHeader:SetPoint("TOPLEFT", previousHeader, "BOTTOMLEFT", 0, -(constants.V_SPACING * (constants.ROWS_PER_GROUP_DISPLAY or constants.ROWS_PER_GROUP)) - constants.HEADER_HEIGHT) -- ROWS_PER_GROUP_DISPLAY if player rows are taller
+        -- Position subsequent groups directly below the previous group header
+        groupHeader:SetPoint("TOPLEFT", previousHeader, "BOTTOMLEFT", 0, -constants.V_SPACING)
     end
     groupData.groupHeaders[groupIndex] = groupHeader
 
@@ -202,8 +184,10 @@ local function _CreatePlayerRowFrames(groupIndex, groupHeader, constants, groupD
         playerRow:SetBackdropColor(0, 0, 0, 0)
 
         if rowIndex == 1 then
-            playerRow:SetPoint("TOPLEFT", groupHeader, "BOTTOMLEFT", 0, -constants.V_SPACING)
+            -- Position the first player row to the TOPRIGHT of the groupHeader
+            playerRow:SetPoint("TOPLEFT", groupHeader, "TOPRIGHT", constants.H_SPACING, 0)
         else
+            -- Subsequent rows are positioned below the previous row
             playerRow:SetPoint("TOPLEFT", groupData.groupRows[groupIndex][rowIndex-1], "BOTTOMLEFT", 0, -constants.V_SPACING)
         end
 
