@@ -415,8 +415,13 @@ function BuffPower:UpdateRosterUI()
 
                         -- Display player buff icons
                         local enabledBuffList = {}
-                        if PLAYER_CLASS == "PRIEST" then
-                            local ordered = {"FORTITUDE", "SPIRIT", "SHADOW_PROTECTION"}
+                        local classOrderTable = {
+                            PRIEST = {"FORTITUDE", "SPIRIT", "SHADOW_PROTECTION"},
+                            MAGE   = {"INTELLECT"},
+                            DRUID  = {"MARK", "THORNS"},
+                        }
+                        local ordered = classOrderTable[PLAYER_CLASS]
+                        if ordered then
                             for i = #ordered, 1, -1 do
                                 local buffKey = ordered[i]
                                 local profileKey = "buffcheck_"..buffKey:lower()
@@ -468,27 +473,26 @@ function BuffPower:UpdateRosterUI()
 
                         -- Buff detection for this player
                         local needsAnyPlayerBuff = false
-                        if PLAYER_CLASS == "PRIEST" then
-                            local anyMissing = false
-                            for buffKey, buffData in pairs(buffsTable) do
+                        local classOrderTable = {
+                            PRIEST = {"FORTITUDE", "SPIRIT", "SHADOW_PROTECTION"},
+                            MAGE   = {"INTELLECT"},
+                            DRUID  = {"MARK", "THORNS"},
+                        }
+                        local ordered = classOrderTable[PLAYER_CLASS]
+                        local anyMissing = false
+                        if ordered then
+                            for i = #ordered, 1, -1 do
+                                local buffKey = ordered[i]
+                                local buffData = buffsTable[buffKey]
                                 local profileKey = "buffcheck_"..buffKey:lower()
                                 local enabled = profile[profileKey] ~= false
-                                local missing = enabled and buffData.spellNames and #buffData.spellNames > 0 and (not HasAnyBuffByName(info.unit, buffData.spellNames))
-                                -- Debug print logic removed for brevity, can be re-added if needed
+                                local missing = enabled and buffData and buffData.spellNames and #buffData.spellNames > 0 and (not HasAnyBuffByName(info.unit, buffData.spellNames))
                                 if missing then
                                     anyMissing = true
                                 end
                             end
                             needsAnyPlayerBuff = anyMissing
-                        elseif PLAYER_CLASS == "MAGE" then
-                            local buffData = buffsTable.INTELLECT
-                            local enabled = profile["buffcheck_intellect"] ~= false
-                            if enabled and buffData and buffData.spellNames and #buffData.spellNames > 0 then
-                                if not HasAnyBuffByName(info.unit, buffData.spellNames) then
-                                    needsAnyPlayerBuff = true
-                                end
-                            end
-                        elseif PLAYER_CLASS == "DRUID" then
+                        else
                             for buffKey, buffData in pairs(buffsTable) do
                                 local enabled = profile["buffcheck_"..buffKey:lower()] ~= false
                                 if enabled and buffData.spellNames and #buffData.spellNames > 0 then
@@ -539,8 +543,13 @@ function BuffPower:UpdateRosterUI()
                 groupHeader:SetBackdropColor(0.2, 1, 0.2, 0.6)
 
                 local enabledBuffListGroup = {}
-                if PLAYER_CLASS == "PRIEST" then
-                    local ordered = {"FORTITUDE", "SPIRIT", "SHADOW_PROTECTION"}
+                local classOrderTable = {
+                    PRIEST = {"FORTITUDE", "SPIRIT", "SHADOW_PROTECTION"},
+                    MAGE   = {"INTELLECT"},
+                    DRUID  = {"MARK", "THORNS"},
+                }
+                local ordered = classOrderTable[PLAYER_CLASS]
+                if ordered then
                     for i = #ordered, 1, -1 do
                         local buffKey = ordered[i]
                         local profileKey = "buffcheck_"..buffKey:lower()
