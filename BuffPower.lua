@@ -338,6 +338,13 @@ local function HasAnyBuffByName(unit, spellNames)
     return false
 end
 
+-- Shared ordered class buff keys table for consistent, DRY logic
+local CLASS_BUFF_ORDER = {
+    PRIEST = {"FORTITUDE", "SPIRIT", "SHADOW_PROTECTION"},
+    MAGE   = {"INTELLECT"},
+    DRUID  = {"MARK", "THORNS"},
+}
+
 function BuffPower:UpdateRosterUI()
     -- Defensive: skip if anchor/group refs missing
     local anchor = _G.BuffPowerAnchor
@@ -415,12 +422,7 @@ function BuffPower:UpdateRosterUI()
 
                         -- Display player buff icons
                         local enabledBuffList = {}
-                        local classOrderTable = {
-                            PRIEST = {"FORTITUDE", "SPIRIT", "SHADOW_PROTECTION"},
-                            MAGE   = {"INTELLECT"},
-                            DRUID  = {"MARK", "THORNS"},
-                        }
-                        local ordered = classOrderTable[PLAYER_CLASS]
+                        local ordered = CLASS_BUFF_ORDER[PLAYER_CLASS]
                         if ordered then
                             for i = #ordered, 1, -1 do
                                 local buffKey = ordered[i]
@@ -473,12 +475,7 @@ function BuffPower:UpdateRosterUI()
 
                         -- Buff detection for this player
                         local needsAnyPlayerBuff = false
-                        local classOrderTable = {
-                            PRIEST = {"FORTITUDE", "SPIRIT", "SHADOW_PROTECTION"},
-                            MAGE   = {"INTELLECT"},
-                            DRUID  = {"MARK", "THORNS"},
-                        }
-                        local ordered = classOrderTable[PLAYER_CLASS]
+                        local ordered = CLASS_BUFF_ORDER[PLAYER_CLASS]
                         local anyMissing = false
                         if ordered then
                             for i = #ordered, 1, -1 do
@@ -543,12 +540,7 @@ function BuffPower:UpdateRosterUI()
                 groupHeader:SetBackdropColor(0.2, 1, 0.2, 0.6)
 
                 local enabledBuffListGroup = {}
-                local classOrderTable = {
-                    PRIEST = {"FORTITUDE", "SPIRIT", "SHADOW_PROTECTION"},
-                    MAGE   = {"INTELLECT"},
-                    DRUID  = {"MARK", "THORNS"},
-                }
-                local ordered = classOrderTable[PLAYER_CLASS]
+                local ordered = CLASS_BUFF_ORDER[PLAYER_CLASS]
                 if ordered then
                     for i = #ordered, 1, -1 do
                         local buffKey = ordered[i]
