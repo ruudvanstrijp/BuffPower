@@ -133,17 +133,141 @@ end
 -------------------------------------------------------------------------------
 -- Anchor Frame (root UI)
 -------------------------------------------------------------------------------
+
+-- Helper function to initialize spell names from spell IDs
+local function _InitializeSpellNameCache()
+    if BuffPower_Buffs then
+        for class, buffs in pairs(BuffPower_Buffs) do
+            for buffKey, buffDef in pairs(buffs) do
+                buffDef.spellNames = {}
+                for _, id in ipairs(buffDef.spellIDs or {}) do
+                    local spellName = GetSpellInfo(id)
+                    if spellName and not tContains(buffDef.spellNames, spellName) then
+                        if class == "MAGE" and buffKey == "INTELLECT" then
+                            if spellName == "Arcane Intellect" or spellName == "Arcane Brilliance" then
+                                table.insert(buffDef.spellNames, spellName)
+                            end
+                        else
+                            table.insert(buffDef.spellNames, spellName)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- Helper function to create and configure a group header frame
+local function _CreateGroupHeaderFrame(groupIndex, parentFrame, previousHeader, constants, groupData)
+    local groupHeader = CreateFrame("Frame", nil, parentFrame, BackdropTemplateMixin and "BackdropTemplate")
+    groupHeader:SetSize(constants.COL_WIDTH, constants.HEADER_HEIGHT_EFFECTIVE or 32) -- Assuming HEADER_HEIGHT_EFFECTIVE includes padding or use a fixed size like 32
+    groupHeader:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeSize = 8, insets = {left=1, right=1, top=1, bottom=1}
+    })
+    groupHeader:SetBackdropColor(0.2, 1, 0.2, 0.6) -- Default PallyPower green
+
+    if groupIndex == 1 then
+        -- Position Group 1 directly below the parentFrame (the anchor)
+        groupHeader:SetPoint("TOPLEFT", parentFrame, "BOTTOMLEFT", 0, -constants.V_SPACING)
+    else
+        groupHeader:SetPoint("TOPLEFT", previousHeader, "BOTTOMLEFT", 0, -(constants.V_SPACING * (constants.ROWS_PER_GROUP_DISPLAY or constants.ROWS_PER_GROUP)) - constants.HEADER_HEIGHT) -- ROWS_PER_GROUP_DISPLAY if player rows are taller
+    end
+    groupData.groupHeaders[groupIndex] = groupHeader
+
+    groupHeader.buffIcons = {}
+    for iconIdx = 1, 5 do
+        local icon = groupHeader:CreateTexture(nil, "ARTWORK")
+        icon:SetSize(16, 16)
+        icon:SetPoint("RIGHT", groupHeader, "RIGHT", -(iconIdx-1)*16 - 5, 0) -- Added small padding from edge
+        icon:SetAlpha(0)
+        groupHeader.buffIcons[iconIdx] = icon
+    end
+
+    local headerLabel = groupHeader:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    headerLabel:SetPoint("LEFT", groupHeader, "LEFT", 5, 0)
+    headerLabel:SetPoint("RIGHT", groupHeader.buffIcons[5], "LEFT", -5, 0) -- Anchor to the left of the icons
+    headerLabel:SetText("Group " .. groupIndex)
+    headerLabel:SetJustifyH("LEFT")
+    groupHeader.label = headerLabel
+
+    return groupHeader
+end
+
+-- Helper function to create and configure player row frames for a group
+local function _CreatePlayerRowFrames(groupIndex, groupHeader, constants, groupData)
+    groupData.groupRows[groupIndex] = {}
+    for rowIndex = 1, constants.ROWS_PER_GROUP do
+        local playerRow = CreateFrame("Frame", nil, groupHeader, BackdropTemplateMixin and "BackdropTemplate")
+        playerRow:SetSize(constants.COL_WIDTH, constants.ROW_HEIGHT_EFFECTIVE or 32) -- Assuming ROW_HEIGHT_EFFECTIVE or a fixed size like 32
+        playerRow:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
+        playerRow:SetBackdropColor(0, 0, 0, 0)
+
+        if rowIndex == 1 then
+            playerRow:SetPoint("TOPLEFT", groupHeader, "BOTTOMLEFT", 0, -constants.V_SPACING)
+        else
+            playerRow:SetPoint("TOPLEFT", groupData.groupRows[groupIndex][rowIndex-1], "BOTTOMLEFT", 0, -constants.V_SPACING)
+        end
+
+        playerRow.buffIcons = {}
+        for iconIdx = 1, 5 do
+            local icon = playerRow:CreateTexture(nil, "ARTWORK")
+            icon:SetSize(16, 16)
+            icon:SetPoint("RIGHT", playerRow, "RIGHT", -(iconIdx-1)*16 - 5, 0) -- Added small padding
+            icon:SetAlpha(0)
+            playerRow.buffIcons[iconIdx] = icon
+        end
+
+        local playerLabel = playerRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        playerLabel:SetPoint("LEFT", playerRow, "LEFT", 5, 0)
+        playerLabel:SetPoint("RIGHT", playerRow.buffIcons[5], "LEFT", -5, 0) -- Anchor to the left of the icons
+        playerLabel:SetText("")
+        playerLabel:SetJustifyH("LEFT")
+        playerRow.label = playerLabel
+        playerRow:Hide()
+        groupData.groupRows[groupIndex][rowIndex] = playerRow
+    end
+
+    -- Mouseover logic for showing/hiding player rows for this group
+    groupHeader:SetScript("OnEnter", function(self)
+        for _, rowFrame in ipairs(groupData.groupRows[groupIndex]) do rowFrame:Show() end
+    end)
+    groupHeader:SetScript("OnLeave", function(self)
+        for _, rowFrame in ipairs(groupData.groupRows[groupIndex]) do rowFrame:Hide() end
+    end)
+    -- Ensure rows are hidden initially
+    for _, rowFrame in ipairs(groupData.groupRows[groupIndex]) do rowFrame:Hide() end
+end
+
 function BuffPower:CreateAnchorFrame()
     -- Root frame for BuffPower UI
-    -- TODO: This anchor is the root for future group/buff frames!
     if _G.BuffPowerAnchor then
         _G.BuffPowerAnchor:Show()
         return
     end
 
+    _InitializeSpellNameCache() -- Call the helper to set up spell names
+
+    -- Define UI constants earlier to use for anchor sizing
+    local uiConstants = {
+        NUM_GROUPS = 8,
+        ROWS_PER_GROUP = 6,
+        HEADER_HEIGHT = 16, -- Actual visual height of the header bar itself
+        ROW_HEIGHT = 14,    -- Actual visual height of the player row bar itself
+        HEADER_HEIGHT_EFFECTIVE = 32, -- Total space for header frame (including internal padding for icons etc)
+        ROW_HEIGHT_EFFECTIVE = 20, -- Total space for player row (adjust as needed)
+        COL_WIDTH = 120,
+        V_SPACING = 2,
+        H_SPACING = 12,
+        anchorPadX = 12, -- Kept for potential future use, but not for Group 1 positioning relative to anchor
+        anchorPadY = -34 -- Kept for potential future use
+    }
+
     local f = CreateFrame("Frame", "BuffPowerAnchor", UIParent, BackdropTemplateMixin and "BackdropTemplate")
-    f:SetSize(180, 44)
-    -- Restore saved anchor position if present
+    -- Set anchor size to match group headers
+    f:SetSize(uiConstants.COL_WIDTH, uiConstants.HEADER_HEIGHT_EFFECTIVE)
+
     local ap = BuffPower.db and BuffPower.db.profile and BuffPower.db.profile.anchor
     if ap and ap.point and ap.x and ap.y then
         f:SetPoint(ap.point, UIParent, ap.point, ap.x, ap.y)
@@ -158,179 +282,53 @@ function BuffPower:CreateAnchorFrame()
     f:SetScript("OnDragStart", function(frame) frame:StartMoving() end)
     f:SetScript("OnDragStop", function(frame)
         frame:StopMovingOrSizing()
-        -- Save anchor position to DB
         if BuffPower.db and BuffPower.db.profile then
             local point, _, _, x, y = frame:GetPoint()
             BuffPower.db.profile.anchor = { point = point or "CENTER", x = x or 0, y = y or 0 }
         end
     end)
-    -- Removed RegisterForClicks: only Button frames implement this; not valid here
     f:SetScript("OnMouseUp", function(frame, button)
       if button == "RightButton" then
         if InterfaceOptionsFrame_OpenToCategory then
           InterfaceOptionsFrame_OpenToCategory("BuffPower")
-          InterfaceOptionsFrame_OpenToCategory("BuffPower")
+          InterfaceOptionsFrame_OpenToCategory("BuffPower") -- Call twice to ensure it opens
         end
       end
     end)
 
-    --[[
-      Build spell name map at load time:
-      For each buff's spellIDs, add a 'spellNames' array via GetSpellInfo.
-      (Classic WoW: matching by name is more reliable than by spellID)
-    --]]
-    if BuffPower_Buffs then
-      for class, buffs in pairs(BuffPower_Buffs) do
-        for buffKey, buffDef in pairs(buffs) do
-          buffDef.spellNames = {}
-          for _, id in ipairs(buffDef.spellIDs or {}) do
-            local spellName = GetSpellInfo(id)
-            -- Filter: Only keep expected buff names for INTELLECT, prevent "Fireball" misdetection
-            if spellName and not tContains(buffDef.spellNames, spellName) then
-              if class == "MAGE" and buffKey == "INTELLECT" then
-                if spellName == "Arcane Intellect" or spellName == "Arcane Brilliance" then
-                  table.insert(buffDef.spellNames, spellName)
-                else
-                  -- skip any other spellName (like "Fireball")
-                end
-              else
-                table.insert(buffDef.spellNames, spellName)
-              end
-            end
-          end
-        end
-      end
-    end
-
-    -- Simple visible backdrop and border
+    -- Simple visible backdrop and border for the main anchor - styled like group headers
     f:SetBackdrop({
-        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-        edgeSize = 8, tile = true, tileSize = 32, insets = {left=3, right=3, top=3, bottom=3}
+        bgFile = "Interface\\Buttons\\WHITE8x8", -- Changed from UI-DialogBox-Background
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", -- Changed from UI-DialogBox-Border
+        edgeSize = 8, 
+        insets = {left=1, right=1, top=1, bottom=1} -- Changed from {left=3, right=3, top=3, bottom=3}
+        -- Removed tile = true, tileSize = 32
     })
-    f:SetBackdropColor(0, 0, 0, 0.80)
+    f:SetBackdropColor(0, 0, 0, 0.80) -- Keep the background color for now, or adjust if needed
 
-    -- Anchor label (localizable)
     local label = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     label:SetPoint("CENTER")
     label:SetText(L["ANCHOR_LABEL"])
 
     -------------------------------------------------------------------------------
-    -- Minimal Group & Player Matrix UI (visual only, no live data yet)
-    -- All frames below are parented to BuffPowerAnchor ('f').
-    -- Each group gets a header ("Group N") and 6 blank player rows below.
-    --
-    -- TODO: Replace placeholder player rows with real names and group assignments.
-    -- TODO: Localize group header labels for all languages (currently English only).
-    -- TODO: Hook live roster/buff logic up to these stubs in future.
+    -- Group & Player Matrix UI Setup
     -------------------------------------------------------------------------------
+    -- uiConstants already defined above
 
-    local NUM_GROUPS = 8
-    local ROWS_PER_GROUP = 6      -- 6 stubs per group; adjust as needed
-    local HEADER_HEIGHT = 16
-    local ROW_HEIGHT = 14
-    local COL_WIDTH = 120 -- widened for group label + icons
-    local V_SPACING = 2
-    local H_SPACING = 12
-    local groupHeaders = {}
-    local groupRows = {}
+    local groupData = {
+        groupHeaders = {},
+        groupRows = {}
+    }
 
-    -- Matrix anchor positioning (anchors top-left group to anchor frame)
-    local anchorPadX, anchorPadY = 12, -34  -- Horizontal/vertical offset from anchor center
-
-    for group = 1, NUM_GROUPS do
-        -- Create a group header FRAME (not FontString, so we can use mouse events)
-        local groupHeader = CreateFrame("Frame", nil, f, BackdropTemplateMixin and "BackdropTemplate")
-        groupHeader:SetSize(120, 32)
-        -- Set backdrop for visual feedback on hover
-        groupHeader:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-            edgeSize = 8, insets = {left=1, right=1, top=1, bottom=1}
-        })
-        groupHeader:SetBackdropColor(0.2, 1, 0.2, 0.6) -- PallyPower green style (default)
-
-        -- Y-stack: anchor each group below previous, first is at top offset from anchor frame
-        if group == 1 then
-            groupHeader:SetPoint("TOPLEFT", f, "CENTER", anchorPadX, anchorPadY)
-        else
-            groupHeader:SetPoint("TOPLEFT", groupHeaders[group-1], "BOTTOMLEFT", 0, -V_SPACING*6 - HEADER_HEIGHT)
-        end
-        groupHeaders[group] = groupHeader
-        groupRows[group] = {}
-
-        -- Buff icons (max 5) for groupHeader
-        groupHeader.buffIcons = {}
-        for iconIdx = 1, 5 do
-            local icon = groupHeader:CreateTexture(nil, "ARTWORK")
-            icon:SetSize(16, 16)
-            icon:SetPoint("RIGHT", groupHeader, "RIGHT", -(iconIdx-1)*16, 0)
-            icon:SetAlpha(0)
-            groupHeader.buffIcons[iconIdx] = icon
-        end
-        -- Header label, shifted right for buff icons
-        local headerLabel = groupHeader:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        -- Remove static offset for label, instead reposition in UpdateRosterUI after icons
-        headerLabel:SetPoint("LEFT", groupHeader, "LEFT", 5, 0) -- default, will be reset dynamically per update
-        headerLabel:SetPoint("RIGHT", groupHeader, "RIGHT")
-        headerLabel:SetText("Group " .. group)
-        headerLabel:SetJustifyH("LEFT")
-        groupHeader.label = headerLabel -- Save reference for later group UI
-
-        -- Player row stubs: create but hide, show only on mouseover
-        for row = 1, ROWS_PER_GROUP do
-            local playerRow = CreateFrame("Frame", nil, groupHeader, BackdropTemplateMixin and "BackdropTemplate")
-            playerRow:SetSize(120, 32)
-            -- Backdrop needed for SetBackdropColor (always set, even if alpha 0)
-            playerRow:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-            playerRow:SetBackdropColor(0, 0, 0, 0)
-            -- Place each player row under the group header
-            if row == 1 then
-                playerRow:SetPoint("TOPLEFT", groupHeader, "BOTTOMLEFT", 0, -V_SPACING)
-            else
-                playerRow:SetPoint("TOPLEFT", groupRows[group][row-1], "BOTTOMLEFT", 0, -V_SPACING)
-            end
-            -- Buff icons for each enabled buff (max 5 per class)
-            playerRow.buffIcons = {}
-            for iconIdx = 1, 5 do
-                local icon = playerRow:CreateTexture(nil, "ARTWORK")
-                icon:SetSize(16, 16) -- square
-                icon:SetPoint("RIGHT", playerRow, "RIGHT", -(iconIdx-1)*16, 0)
-                icon:SetAlpha(0) -- hide by default
-                playerRow.buffIcons[iconIdx] = icon
-            end
-            -- Set a simple label for now, shift right for icons
-            local playerLabel = playerRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-            playerLabel:SetPoint("LEFT", playerRow, "LEFT", 5, 0)
-            playerLabel:SetPoint("RIGHT", playerRow, "RIGHT")
-            playerLabel:SetText("") -- Will be set by UpdateRosterUI
-            playerLabel:SetJustifyH("LEFT")
-            playerRow.label = playerLabel  -- Store reference for updates
-            playerRow:Hide()
-            groupRows[group][row] = playerRow
-        end
-
-        -- Mouseover logic for showing player rows
-        groupHeader:SetScript("OnEnter", function(self)
-            for _, rowFrame in ipairs(groupRows[group]) do rowFrame:Show() end
-            -- No hover color: preserve current background (green/red per group status)
-            -- DO NOT set any backdrop color
-        end)
-        groupHeader:SetScript("OnLeave", function(self)
-            for _, rowFrame in ipairs(groupRows[group]) do rowFrame:Hide() end
-            -- No hover color: preserve current background (green/red per group status)
-            -- DO NOT set any backdrop color
-        end)
-
-        -- Hide player rows initially (just to be sure)
-        for _, rowFrame in ipairs(groupRows[group]) do rowFrame:Hide() end
+    for group = 1, uiConstants.NUM_GROUPS do
+        local previousHeader = (group > 1) and groupData.groupHeaders[group-1] or nil
+        local groupHeader = _CreateGroupHeaderFrame(group, f, previousHeader, uiConstants, groupData)
+        _CreatePlayerRowFrames(group, groupHeader, uiConstants, groupData)
     end
 
-    -- Make frames discoverable for future logic (optional)
-    f.GroupHeaders = groupHeaders
-    f.GroupRows = groupRows
+    f.GroupHeaders = groupData.groupHeaders
+    f.GroupRows = groupData.groupRows
 
-    -- Show the frame
     f:Show()
 end
 
