@@ -16,14 +16,6 @@ local AceEvent = LibStub("AceEvent-3.0")
 BuffPower = AceAddon:NewAddon("BuffPower", "AceConsole-3.0", "AceEvent-3.0")
 -- TODO: Support for modular extensions via AceAddon
 
--- Slash command to open options window
-BuffPower:RegisterChatCommand("bp", function()
-  if InterfaceOptionsFrame_OpenToCategory then
-    InterfaceOptionsFrame_OpenToCategory("BuffPower")
-    InterfaceOptionsFrame_OpenToCategory("BuffPower")
-  end
-end)
-
 -- External libraries (stubs for future use)
 local AceDB = LibStub("AceDB-3.0")
 local AceConfig = LibStub("AceConfig-3.0")
@@ -58,8 +50,9 @@ function BuffPower:OnInitialize()
     }, true)
     self:RegisterOptions()
 
-    -- options table registration now happens above (after AceDB is ready)
-    -- self:RegisterOptions()
+    self:RegisterChatCommand("bp", function()
+      AceConfigDialog:Open("BuffPower")
+    end)
 
     -- TODO: Register events (e.g., PLAYER_LOGIN, etc.)
     self:RegisterEvents()
@@ -85,9 +78,11 @@ end
 -- Placeholder: Options Registration
 -------------------------------------------------------------------------------
 function BuffPower:RegisterOptions()
-    -- TODO: Register AceConfig options table for /buffpower and Interface Options
-    -- TODO: Support profile switching via AceDBOptions
-    -- TODO: Integrate LibSharedMedia-3.0 options for bar textures/sounds/colors
+    -- Actual options registration should be in BuffPowerOptions.lua
+    -- This function in BuffPower.lua can remain a placeholder or be used for
+    -- any addon-specific setup needed before BuffPowerOptions.lua defines the table.
+    -- For now, ensure BuffPowerOptions.lua is loaded and does its job.
+    -- If BuffPowerOptions.lua itself calls AceConfig:RegisterOptionsTable, this is fine.
 end
 
 -------------------------------------------------------------------------------
@@ -107,6 +102,8 @@ function BuffPower:OnUnitAura(event, unit)
 end
 
 function BuffPower:OnPlayerLogin()
+    -- self:RegisterChatCommand("bp", function() ... end) -- MOVED to OnInitialize
+
     self:CreateAnchorFrame()
     self:UpdateRosterUI()
 end

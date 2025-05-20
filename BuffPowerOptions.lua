@@ -1,3 +1,5 @@
+print("BuffPowerOptions.lua: Loading file...")
+
 -- BuffPower - Options/Config Initialization (Ace3 Scaffold)
 -- Sets up AceConfig-3.0, AceConfigDialog-3.0, and AceDBOptions-3.0 for BuffPower.
 -- Organized: "General", "Assignments", "Buff Toggles" (subgroups: Mage, Priest, Druid).
@@ -111,10 +113,8 @@ for _, class in ipairs(CLASSES) do
       end,
       set = function(_, val)
         local key = "buffcheck_".._buffKey:lower()
-        print("[BuffPower][OPTIONS][DEBUG] set:", key, "=", tostring(val), "profileTable:", tostring(BuffPower.db.profile))
         if BuffPower.db and BuffPower.db.profile then
           BuffPower.db.profile[key] = (val == true)
-          print("[BuffPower][OPTIONS][DEBUG] Now profile[key]:", key, "=", tostring(BuffPower.db.profile[key]))
           if BuffPower.UpdateRosterUI then
             BuffPower:UpdateRosterUI()
           end
@@ -138,19 +138,17 @@ for _, class in ipairs(CLASSES) do
   options.args.bufftoggles.args[class] = classGroup
 end
 
--- Register options table with Ace3
 AceConfig:RegisterOptionsTable("BuffPower", options)
 AceConfigDialog:AddToBlizOptions("BuffPower", "BuffPower")
 AceConfigDialog:AddToBlizOptions("BuffPower", "OPTIONS_GENERAL", "BuffPower", "general")
 AceConfigDialog:AddToBlizOptions("BuffPower", "OPTIONS_ASSIGNMENTS", "BuffPower", "assignments")
 AceConfigDialog:AddToBlizOptions("BuffPower", "OPTIONS_BUFFTOGGLES", "BuffPower", "bufftoggles")
 
--- DB Options: For future DB interface (not visible unless added)
--- Removed duplicate AddToBlizOptions call to prevent options registration error (only register "BuffPower" once)
-
--- TODOs for future development (see assigned comments in each group above):
--- - General: Add actual global/user settings (minimap button, scale, keybinds, reset profile, etc).
--- - Assignments: Build full class-group-buff responsibility matrix, with interactive assignment logic, save/restore, and advanced settings as per BuffPower_Plan_v4.md.
--- - Buff Toggles: For each class (Mage, Priest, Druid), enable per-buff toggling (enable/disable), then per-group, then full UI for assignment/prio/drag/etc.
--- - Integrate localization: All names/descs must resolve from L[] locale table, never hardcoded.
--- - Extendable: Add new classes/buffs by editing BuffPowerValues.lua and/or localization only -- no code change here needed except for new class in CLASSES table.
+if InterfaceOptionsFrameAddOns and InterfaceOptionsFrameAddOns.list then
+    local foundEntry = false
+    for i, entry in ipairs(InterfaceOptionsFrameAddOns.list) do
+        if entry and (entry.optionsTable == "BuffPower" or entry.name == "BuffPower") then
+            foundEntry = true
+        end
+    end
+end

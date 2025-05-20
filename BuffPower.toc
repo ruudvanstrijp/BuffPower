@@ -4,6 +4,7 @@
 ## Version: 0.1.0
 ## Notes: Utility framework for raid and party management (minimal, alpha)
 ## DefaultState: enabled
+## OptionalDeps: Blizzard_AddOnOptions
 
 ## SavedVariables: BuffPowerDB
 
