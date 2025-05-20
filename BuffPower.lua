@@ -384,13 +384,14 @@ function BuffPower:UpdateRosterUI()
     for g = 1, 8 do
         local groupHeader = anchor.GroupHeaders and anchor.GroupHeaders[g]
         local groupRowsForGroup = anchor.GroupRows[g]
+        local isGroupEmpty = #roster[g] == 0
 
-        if (not inRaid) and g > 1 then
+        if (not inRaid and g > 1) or (inRaid and isGroupEmpty) then -- Hide if not in raid and not group 1, OR if in raid and group is empty
             if groupHeader then groupHeader:Hide() end
             if groupRowsForGroup then
                 for _, rowFrame in ipairs(groupRowsForGroup) do rowFrame:Hide() end
             end
-        else -- Group is active (in raid, or group 1 if not in raid)
+        else -- Group is active (in raid and not empty, or group 1 if not in raid)
             if groupHeader then groupHeader:Show() end
             local groupNeedsBuff = false
 
@@ -510,6 +511,19 @@ function BuffPower:UpdateRosterUI()
                         end
                     else -- No player info for this row
                         label:SetText("")
+                        -- Reset backdrop color is already handled at the start of player row processing
+                        if playerRow.buffIcons then
+                            for iconIdx = 1, 5 do -- Assuming 5 icons as per UI setup
+                                local icon = playerRow.buffIcons[iconIdx]
+                                if icon then
+                                    icon:SetAlpha(0)
+                                    icon:Hide()
+                                    icon:SetTexture(nil)      -- Clear current texture
+                                    icon:SetDesaturated(false) -- Reset desaturation (normal state)
+                                    icon:SetVertexColor(1,1,1) -- Reset color to white (normal state)
+                                end
+                            end
+                        end
                     end
                 end -- End of player row loop
             end -- End of check for groupRowsForGroup
