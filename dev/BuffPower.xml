@@ -1,0 +1,203 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/ ..\FrameXML\UI.xsd">
+    <!-- Main Anchor Frame -->
+    <Frame name="BuffPowerFrame" parent="UIParent" movable="true" frameStrata="MEDIUM" enableMouse="true" hidden="false">
+        <Size x="1" y="1"/> <!-- Dynamically sized in Lua -->
+        <Anchors>
+            <Anchor point="CENTER"/>
+        </Anchors>
+        <Scripts>
+            <OnLoad>
+                self:RegisterForDrag("LeftButton")
+                if Mixin then Mixin(self, BackdropTemplateMixin) end
+                if self.SetBackdrop then
+                    self:SetBackdrop({
+                        bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+                        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+                        tile = true, tileSize = 16, edgeSize = 16,
+                        insets = { left = 3, right = 3, top = 3, bottom = 3 }
+                    })
+                    self:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
+                    self:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
+                end
+            </OnLoad>
+            <OnDragStart>
+                self:StartMoving()
+            </OnDragStart>
+            <OnDragStop>
+                self:StopMovingOrSizing()
+                BuffPower:SaveAnchorPosition(self)
+            </OnDragStop>
+        </Scripts>
+    </Frame>
+
+    <!-- Group Header Button Template (Inspired by PallyPower ClassButtonTemplate) -->
+    <Button name="BuffPowerGroupButtonTemplate" virtual="true">
+        <Size x="120" y="32"/> <!-- Adjust as needed -->
+        <Layers>
+            <Layer level="BACKGROUND">
+                <Texture name="$parentBg" setAllPoints="true">
+                    <Color r="0.2" g="0.2" b="0.2" a="0.7"/>
+                </Texture>
+            </Layer>
+            <Layer level="BORDER">
+                <Texture name="$parentBorder" file="Interface\ChatFrame\ChatFrameBackground" setAllPoints="true" parentKey="border">
+                    <Color r="0.4" g="0.4" b="0.4" a="1"/>
+                </Texture>
+                 <Texture name="$parentStripe" file="Interface\Tooltips\UI-Tooltip-Background">
+                  <Size x="120" y="1"/>
+                  <Anchors>
+                    <Anchor point="BOTTOMLEFT"/>
+                  </Anchors>
+                  <Color r="0" g="0" b="0" a="0.7"/>
+                </Texture>
+            </Layer>
+            <Layer level="ARTWORK">
+                <FontString name="$parentText" parentKey="HeaderText" inherits="GameFontNormalSmall" justifyH="LEFT" text="Group X">
+                    <Size x="0" y="14"/>
+                    <Anchors>
+                        <Anchor point="TOPLEFT">
+                            <Offset x="5" y="-3"/>
+                        </Anchor>
+                        <Anchor point="BOTTOMRIGHT">
+                            <Offset x="-25" y="3"/>
+                        </Anchor>
+                    </Anchors>
+                </FontString>
+            </Layer>
+            <Layer level="OVERLAY">
+                <!-- Up to 2 group-wide buff icons -->
+                <Texture name="$parentBuffIcon1" parentKey="BuffIcon1">
+                    <Size x="18" y="18"/>
+                    <Anchors>
+                        <Anchor point="RIGHT" relativePoint="RIGHT">
+                            <Offset x="-5" y="0"/>
+                        </Anchor>
+                    </Anchors>
+                </Texture>
+                <Texture name="$parentBuffIcon2" parentKey="BuffIcon2">
+                    <Size x="18" y="18"/>
+                    <Anchors>
+                        <Anchor point="RIGHT" relativeTo="$parentBuffIcon1" relativePoint="LEFT">
+                            <Offset x="-2" y="0"/>
+                        </Anchor>
+                    </Anchors>
+                </Texture>
+            </Layer>
+        </Layers>
+        <Scripts>
+            <OnClick>
+                -- Handle group-wide buff casting or other actions
+                BuffPower:GroupHeaderClick(self, button)
+            </OnClick>
+            <OnEnter>
+                BuffPower:GroupHeader_OnEnter(self)
+            </OnEnter>
+            <OnLeave>
+                BuffPower:GroupHeader_OnLeave(self)
+            </OnLeave>
+        </Scripts>
+    </Button>
+
+    <!-- Player Row Button Template (Inspired by PallyPowerButtonTemplate) -->
+    <Button name="BuffPowerPlayerButtonTemplate" virtual="true">
+        <Size x="120" y="20"/> <!-- Adjust as needed -->
+        <Layers>
+            <Layer level="BACKGROUND">
+                <Texture name="$parentBg" setAllPoints="true">
+                    <Color r="0.15" g="0.15" b="0.15" a="0.7"/>
+                </Texture>
+            </Layer>
+            <Layer level="BORDER">
+                 <Texture name="$parentBorder" file="Interface\ChatFrame\ChatFrameBackground" setAllPoints="true" parentKey="border">
+                    <Color r="0.3" g="0.3" b="0.3" a="1"/>
+                </Texture>
+            </Layer>
+            <Layer level="ARTWORK">
+                <Texture name="$parentClassIcon" parentKey="ClassIcon">
+                    <Size x="14" y="14"/>
+                    <Anchors>
+                        <Anchor point="LEFT">
+                            <Offset x="3" y="0"/>
+                        </Anchor>
+                    </Anchors>
+                </Texture>
+                <FontString name="$parentPlayerName" parentKey="PlayerNameText" inherits="GameFontHighlightSmall" justifyH="LEFT" text="Player Name">
+                    <Size x="0" y="12"/>
+                    <Anchors>
+                        <Anchor point="LEFT" relativeTo="$parentClassIcon" relativePoint="RIGHT">
+                            <Offset x="3" y="0"/>
+                        </Anchor>
+                        <Anchor point="RIGHT">
+                            <Offset x="-22" y="0"/> <!-- Space for buff icons -->
+                        </Anchor>
+                    </Anchors>
+                </FontString>
+            </Layer>
+            <Layer level="OVERLAY">
+                <!-- Up to 2 individual buff icons -->
+                <Texture name="$parentBuffIcon1" parentKey="BuffIcon1">
+                    <Size x="14" y="14"/>
+                    <Anchors>
+                        <Anchor point="RIGHT" relativePoint="RIGHT">
+                            <Offset x="-3" y="0"/>
+                        </Anchor>
+                    </Anchors>
+                </Texture>
+                <Texture name="$parentBuffIcon2" parentKey="BuffIcon2">
+                    <Size x="14" y="14"/>
+                    <Anchors>
+                        <Anchor point="RIGHT" relativeTo="$parentBuffIcon1" relativePoint="LEFT">
+                            <Offset x="-2" y="0"/>
+                        </Anchor>
+                    </Anchors>
+                </Texture>
+                <!-- Timer text can be added here if needed -->
+            </Layer>
+        </Layers>
+        <Scripts>
+            <OnLoad>
+                self:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+            </OnLoad>
+            <OnClick>
+                BuffPower:PlayerButton_OnClick(self, button)
+            </OnClick>
+            <OnEnter>
+                BuffPower:PlayerButton_OnEnter(self)
+            </OnEnter>
+            <OnLeave>
+                BuffPower:PlayerButton_OnLeave(self)
+            </OnLeave>
+        </Scripts>
+    </Button>
+
+    <!-- Small Buff Icon Template (for player rows, potentially group headers) -->
+    <Button name="BuffPowerSmallBuffIconTemplate" virtual="true">
+        <Size x="16" y="16"/>
+        <Layers>
+            <Layer level="ARTWORK">
+                <Texture name="$parentIcon" parentKey="icon" setAllPoints="true"/>
+            </Layer>
+            <Layer level="OVERLAY">
+                <FontString name="$parentCooldown" inherits="NumberFontNormalSmall" parentKey="cooldown" setAllPoints="true">
+                    <Anchors>
+                        <Anchor point="CENTER" x="0" y="0"/>
+                    </Anchors>
+                </FontString>
+            </Layer>
+            <Layer level="HIGHLIGHT">
+                <Texture name="$parentHighlight" file="Interface\Buttons\ButtonHilight-Square" alphaMode="ADD" setAllPoints="true"/>
+            </Layer>
+        </Layers>
+        <Scripts>
+            <OnClick>
+                BuffPower:BuffIcon_OnClick(self, button)
+            </OnClick>
+            <OnEnter>
+                BuffPower:BuffIcon_OnEnter(self)
+            </OnEnter>
+            <OnLeave>
+                BuffPower:BuffIcon_OnLeave(self)
+            </OnLeave>
+        </Scripts>
+    </Button>
+</Ui>
