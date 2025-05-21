@@ -157,11 +157,21 @@ local function _CreateGroupHeaderFrame(groupIndex, parentFrame, previousHeader, 
 
     groupHeader.buffIcons = {}
     for iconIdx = 1, 5 do
-        local icon = groupHeader:CreateTexture(nil, "ARTWORK")
-        icon:SetSize(16, 16)
-        icon:SetPoint("RIGHT", groupHeader, "RIGHT", -(iconIdx-1)*16 - 5, 0) -- Added small padding from edge
+        -- Create a button using SecureActionButtonTemplate
+        local btn = CreateFrame("Button", nil, groupHeader, "SecureActionButtonTemplate")
+        btn:SetSize(16, 16)
+        btn:SetPoint("RIGHT", groupHeader, "RIGHT", -(iconIdx-1)*16 - 5, 0)
+        -- Set secure click type (user/extension may override attributes as needed)
+        btn:SetAttribute("type", "macro")
+        btn:SetAttribute("macrotext", "")
+        -- Hide by default
+        btn:Hide()
+        -- Texture visual as child
+        local icon = btn:CreateTexture(nil, "ARTWORK")
+        icon:SetAllPoints()
         icon:SetAlpha(0)
-        groupHeader.buffIcons[iconIdx] = icon
+        btn.icon = icon
+        groupHeader.buffIcons[iconIdx] = btn
     end
 
     local headerLabel = groupHeader:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -177,47 +187,117 @@ end
 -- Helper function to create and configure player row frames for a group
 local function _CreatePlayerRowFrames(groupIndex, groupHeader, constants, groupData)
     groupData.groupRows[groupIndex] = {}
+    -- Add group-level hover tracking for this group
+    -- Replace hover count logic with robust timed IsMouseOver sweep
+    if not groupData.hideCheckTimer then groupData.hideCheckTimer = {} end
+
+    local function SetRowsVisible(visible)
+        for _, rowFrame in ipairs(groupData.groupRows[groupIndex]) do
+            if visible then
+                rowFrame:Show()
+            else
+                rowFrame:Hide()
+            end
+        end
+    end
+
+    -- Returns true if mouse is over groupHeader or any row or their icons
+    local function IsGroupMouseOver()
+        if groupHeader:IsMouseOver() then return true end
+        for _, row in ipairs(groupData.groupRows[groupIndex]) do
+            if row:IsMouseOver() then return true end
+            if row.buffIcons then
+                for _, iconBtn in ipairs(row.buffIcons) do
+                    if iconBtn:IsMouseOver() then return true end
+                end
+            end
+        end
+        return false
+    end
+
+    -- Visibility updater with a slight delay to allow WoW UI event order to settle
+    local function ScheduleMouseoutHide()
+        -- If timer is running, cancel and restart (overwrite).
+        if groupData.hideCheckTimer[groupIndex] then
+            groupData.hideCheckTimer[groupIndex]:Cancel()
+        end
+        groupData.hideCheckTimer[groupIndex] = C_Timer.After(0.08, function()
+            if not IsGroupMouseOver() then
+                SetRowsVisible(false)
+            end
+        end)
+    end
+
+    local function OnEnterAny()
+        SetRowsVisible(true)
+        -- Defensive: cancel any pending hide
+        if groupData.hideCheckTimer[groupIndex] then
+            groupData.hideCheckTimer[groupIndex]:Cancel()
+            groupData.hideCheckTimer[groupIndex] = nil
+        end
+    end
+    local function OnLeaveAny()
+        -- Schedule delayed hide so rapid event/jitter cannot break panel
+        ScheduleMouseoutHide()
+    end
+
     for rowIndex = 1, constants.ROWS_PER_GROUP do
         local playerRow = CreateFrame("Frame", nil, groupHeader, BackdropTemplateMixin and "BackdropTemplate")
-        playerRow:SetSize(constants.COL_WIDTH, constants.ROW_HEIGHT_EFFECTIVE or 32) -- Assuming ROW_HEIGHT_EFFECTIVE or a fixed size like 32
+        playerRow:SetSize(constants.COL_WIDTH, constants.ROW_HEIGHT_EFFECTIVE or 32)
         playerRow:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
         playerRow:SetBackdropColor(0, 0, 0, 0)
 
         if rowIndex == 1 then
-            -- Position the first player row to the TOPRIGHT of the groupHeader
             playerRow:SetPoint("TOPLEFT", groupHeader, "TOPRIGHT", constants.H_SPACING, 0)
         else
-            -- Subsequent rows are positioned below the previous row
             playerRow:SetPoint("TOPLEFT", groupData.groupRows[groupIndex][rowIndex-1], "BOTTOMLEFT", 0, -constants.V_SPACING)
         end
 
         playerRow.buffIcons = {}
         for iconIdx = 1, 5 do
-            local icon = playerRow:CreateTexture(nil, "ARTWORK")
-            icon:SetSize(16, 16)
-            icon:SetPoint("RIGHT", playerRow, "RIGHT", -(iconIdx-1)*16 - 5, 0) -- Added small padding
+            local btn = CreateFrame("Button", nil, playerRow, "SecureActionButtonTemplate")
+            btn:SetSize(16, 16)
+            btn:SetPoint("RIGHT", playerRow, "RIGHT", -(iconIdx-1)*16 - 5, 0)
+            btn:SetAttribute("type", "macro")
+
+            btn:SetAttribute("macrotext", "")
+
+            btn:RegisterForClicks("AnyUp")
+
+            btn:Hide()
+            btn:EnableMouse(true)
+            btn:SetToplevel(true)
+            btn:SetFrameLevel(playerRow:GetFrameLevel() + 1)
+            btn:SetScript("OnEnter", OnEnterAny)
+            btn:SetScript("OnLeave", OnLeaveAny)
+
+            -- Remove debug OnClick handler: secure macro/click-casting only for prod.
+            local icon = btn:CreateTexture(nil, "ARTWORK")
+            icon:SetAllPoints()
             icon:SetAlpha(0)
-            playerRow.buffIcons[iconIdx] = icon
+            btn.icon = icon
+            playerRow.buffIcons[iconIdx] = btn
         end
 
         local playerLabel = playerRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         playerLabel:SetPoint("LEFT", playerRow, "LEFT", 5, 0)
-        playerLabel:SetPoint("RIGHT", playerRow.buffIcons[5], "LEFT", -5, 0) -- Anchor to the left of the icons
+        playerLabel:SetPoint("RIGHT", playerRow.buffIcons[5], "LEFT", -5, 0)
         playerLabel:SetText("")
         playerLabel:SetJustifyH("LEFT")
         playerRow.label = playerLabel
         playerRow:Hide()
         groupData.groupRows[groupIndex][rowIndex] = playerRow
+
+        -- Add OnEnter/OnLeave for player row
+        playerRow:SetScript("OnEnter", OnEnterAny)
+        playerRow:SetScript("OnLeave", OnLeaveAny)
     end
 
-    -- Mouseover logic for showing/hiding player rows for this group
-    groupHeader:SetScript("OnEnter", function(self)
-        for _, rowFrame in ipairs(groupData.groupRows[groupIndex]) do rowFrame:Show() end
-    end)
-    groupHeader:SetScript("OnLeave", function(self)
-        for _, rowFrame in ipairs(groupData.groupRows[groupIndex]) do rowFrame:Hide() end
-    end)
-    -- Ensure rows are hidden initially
+    -- Add OnEnter/OnLeave for header
+    groupHeader:SetScript("OnEnter", OnEnterAny)
+    groupHeader:SetScript("OnLeave", OnLeaveAny)
+
+    -- Hide initially
     for _, rowFrame in ipairs(groupData.groupRows[groupIndex]) do rowFrame:Hide() end
 end
 
@@ -448,24 +528,35 @@ function BuffPower:UpdateRosterUI()
                                 local buffData = buffsTable[buffKey]
                                 local singleID = buffData and buffData.spellIDs and buffData.spellIDs[#buffData.spellIDs]
                                 local texture = singleID and select(3, GetSpellInfo(singleID))
-                                icon:SetAlpha(1)
+                                icon:Show()
+                                icon.icon:SetAlpha(1)
                                 if texture then
-                                    icon:SetTexture(texture)
+                                    icon.icon:SetTexture(texture)
                                 else
-                                    icon:SetTexture(nil)
+                                    icon.icon:SetTexture(nil)
+                                end
+                                -- Set macrotext to cast the correct spell: single target buff for player icons
+                                local spellName
+                                if buffData and buffData.spellNames and #buffData.spellNames > 0 then
+                                    -- Use last spellName in list for single target (Classic: Arcane Intellect, Mark of the Wild, etc.)
+                                    spellName = buffData.spellNames[#buffData.spellNames]
+                                end
+                                if spellName then
+                                    icon:SetAttribute("macrotext", "/cast [@mouseover,help,nodead][] "..spellName)
+                                else
+                                    icon:SetAttribute("macrotext", "")
                                 end
                                 local missing = buffData and buffData.spellNames and #buffData.spellNames > 0 and (not HasAnyBuffByName(info.unit, buffData.spellNames))
                                 if missing then
-                                    icon:SetDesaturated(true)
-                                    icon:SetVertexColor(1, 0.2, 0.2)
+                                    icon.icon:SetDesaturated(true)
+                                    icon.icon:SetVertexColor(1, 0.2, 0.2)
                                 else
-                                    icon:SetDesaturated(false)
-                                    icon:SetVertexColor(1, 1, 1)
+                                    icon.icon:SetDesaturated(false)
+                                    icon.icon:SetVertexColor(1, 1, 1)
                                 end
-                                icon:Show()
                                 visiblePlayerIcons = visiblePlayerIcons + 1
                             elseif icon then
-                                icon:SetAlpha(0)
+                                icon.icon:SetAlpha(0)
                                 icon:Hide()
                             end
                         end
@@ -517,11 +608,11 @@ function BuffPower:UpdateRosterUI()
                             for iconIdx = 1, 5 do -- Assuming 5 icons as per UI setup
                                 local icon = playerRow.buffIcons[iconIdx]
                                 if icon then
-                                    icon:SetAlpha(0)
+                                    icon.icon:SetAlpha(0)
                                     icon:Hide()
-                                    icon:SetTexture(nil)      -- Clear current texture
-                                    icon:SetDesaturated(false) -- Reset desaturation (normal state)
-                                    icon:SetVertexColor(1,1,1) -- Reset color to white (normal state)
+                                    icon.icon:SetTexture(nil)      -- Clear current texture
+                                    icon.icon:SetDesaturated(false) -- Reset desaturation (normal state)
+                                    icon.icon:SetVertexColor(1,1,1) -- Reset color to white (normal state)
                                 end
                             end
                         end
@@ -569,14 +660,14 @@ function BuffPower:UpdateRosterUI()
                                 and buffData.spellIDs[1]
                                 or (buffData and buffData.spellIDs and buffData.spellIDs[#buffData.spellIDs])
                             local texture = groupSpellID and select(3, GetSpellInfo(groupSpellID))
-                            icon:SetAlpha(1)
+                            icon.icon:SetAlpha(1)
                             if texture then
-                                icon:SetTexture(texture)
+                                icon.icon:SetTexture(texture)
                             else
                                 if buffKey == "SHADOW_PROTECTION" then
-                                    icon:SetTexture("Interface\\Icons\\Spell_Shadow_AntiShadow")
+                                    icon.icon:SetTexture("Interface\\Icons\\Spell_Shadow_AntiShadow")
                                 else
-                                    icon:SetTexture(nil)
+                                    icon.icon:SetTexture(nil)
                                 end
                             end
 
@@ -608,16 +699,15 @@ function BuffPower:UpdateRosterUI()
                             end
 
                             if groupIconMissingBuff then
-                                icon:SetDesaturated(true)
-                                icon:SetVertexColor(1, 0.2, 0.2)
+                                icon.icon:SetDesaturated(true)
+                                icon.icon:SetVertexColor(1, 0.2, 0.2)
                             else
-                                icon:SetDesaturated(false)
-                                icon:SetVertexColor(1, 1, 1)
+                                icon.icon:SetDesaturated(false)
+                                icon.icon:SetVertexColor(1, 1, 1)
                             end
-                            icon:Show()
                             visibleGroupIcons = iconIdx -- Track the last visible icon index
                         elseif icon then
-                            icon:SetAlpha(0)
+                            icon.icon:SetAlpha(0)
                             icon:Hide()
                         end
                     end -- End of group header icon loop
