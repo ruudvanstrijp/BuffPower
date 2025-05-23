@@ -29,7 +29,35 @@ L["BUFFS"]          = "Buffs"
 L["UI_LABEL_SAMPLE"]= "Sample Label"
 -- Add new UI/general structure keys below this line.
 L["ANCHOR_LABEL"]   = "BuffPower"
--- Example: L["YOUR_KEY_NAME"] = "Visible Name"
--- Do not add spell names, class names, or game logic text here.
+
+-- Options panel labels
+L["OPTIONS_GENERAL"] = "General"
+L["OPTIONS_GENERAL_DESC"] = "General BuffPower settings"
+L["OPTIONS_ASSIGNMENTS"] = "Assignments"
+L["OPTIONS_ASSIGNMENTS_DESC"] = "Buff assignment configuration"
+L["OPTIONS_BUFFTOGGLES"] = "Buff Toggles"
+L["OPTIONS_BUFFTOGGLES_DESC"] = "Enable/disable individual buffs"
+
+-- Class names
+L["CLASS_MAGE"] = "Mage"
+L["CLASS_PRIEST"] = "Priest"
+L["CLASS_DRUID"] = "Druid"
+L["CLASS_MAGE_DESC"] = "Mage buff settings"
+L["CLASS_PRIEST_DESC"] = "Priest buff settings"
+L["CLASS_DRUID_DESC"] = "Druid buff settings"
+
+-- Buff names
+L["INTELLECT"] = "Intellect"
+L["INTELLECT_DESC"] = "Arcane Intellect / Arcane Brilliance"
+L["FORTITUDE"] = "Fortitude"
+L["FORTITUDE_DESC"] = "Power Word: Fortitude / Prayer of Fortitude"
+L["SPIRIT"] = "Spirit"
+L["SPIRIT_DESC"] = "Divine Spirit / Prayer of Spirit"
+L["SHADOW_PROTECTION"] = "Shadow Protection"
+L["SHADOW_PROTECTION_DESC"] = "Shadow Protection / Prayer of Shadow Protection"
+L["MARK"] = "Mark of the Wild"
+L["MARK_DESC"] = "Mark of the Wild / Gift of the Wild"
+L["THORNS"] = "Thorns"
+L["THORNS_DESC"] = "Thorns"
 
 -- End of enUS localization for BuffPower

@@ -118,16 +118,30 @@ local function _InitializeSpellNameCache()
         for class, buffs in pairs(BuffPower_Buffs) do
             for buffKey, buffDef in pairs(buffs) do
                 buffDef.spellNames = {}
+                buffDef.groupSpellNames = {}
+                buffDef.singleSpellNames = {}
+                
+                -- Process all spell IDs for general spell names
                 for _, id in ipairs(buffDef.spellIDs or {}) do
                     local spellName = GetSpellInfo(id)
                     if spellName and not tContains(buffDef.spellNames, spellName) then
-                        if class == "MAGE" and buffKey == "INTELLECT" then
-                            if spellName == "Arcane Intellect" or spellName == "Arcane Brilliance" then
-                                table.insert(buffDef.spellNames, spellName)
-                            end
-                        else
-                            table.insert(buffDef.spellNames, spellName)
-                        end
+                        table.insert(buffDef.spellNames, spellName)
+                    end
+                end
+                
+                -- Process group spell IDs
+                for _, id in ipairs(buffDef.groupSpellIDs or {}) do
+                    local spellName = GetSpellInfo(id)
+                    if spellName and not tContains(buffDef.groupSpellNames, spellName) then
+                        table.insert(buffDef.groupSpellNames, spellName)
+                    end
+                end
+                
+                -- Process single-target spell IDs
+                for _, id in ipairs(buffDef.singleSpellIDs or {}) do
+                    local spellName = GetSpellInfo(id)
+                    if spellName and not tContains(buffDef.singleSpellNames, spellName) then
+                        table.insert(buffDef.singleSpellNames, spellName)
                     end
                 end
             end
