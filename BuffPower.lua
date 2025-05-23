@@ -748,3 +748,228 @@ function BuffPower:UpdateRosterUI()
     end -- End of main group loop (g = 1, 8)
 end
 -- End BuffPower skeleton.
+
+-------------------------------------------------------------------------------
+-- Click-Casting Functions (Missing Implementation)
+-------------------------------------------------------------------------------
+
+-- Cast a specific group buff on the entire raid/party
+function BuffPower:CastSpecificGroupBuff(buffKey, groupNum)
+    if not buffKey then return end
+    
+    local PLAYER_CLASS = select(2, UnitClass("player")):upper()
+    local buffData = BuffPower_Buffs[PLAYER_CLASS] and BuffPower_Buffs[PLAYER_CLASS][buffKey]
+    
+    if not buffData then
+        self:Print("BuffPower: Unknown buff key:", buffKey)
+        return
+    end
+    
+    -- Determine group spell ID (typically the first in the list for group buffs)
+    local groupSpellID = buffData.spellIDs and buffData.spellIDs[1]
+    if not groupSpellID then
+        self:Print("BuffPower: No group spell ID found for buff:", buffKey)
+        return
+    end
+    
+    local spellName = GetSpellInfo(groupSpellID)
+    if spellName then
+        CastSpellByName(spellName) -- No target needed for group buffs
+    else
+        self:Print("BuffPower: Could not get spell name for ID:", groupSpellID)
+    end
+end
+
+-- Cast a specific single-target buff on a specific unit
+function BuffPower:CastSpecificSingleBuff(buffKey, unitid)
+    if not buffKey or not unitid then return end
+    
+    local PLAYER_CLASS = select(2, UnitClass("player")):upper()
+    local buffData = BuffPower_Buffs[PLAYER_CLASS] and BuffPower_Buffs[PLAYER_CLASS][buffKey]
+    
+    if not buffData then
+        self:Print("BuffPower: Unknown buff key:", buffKey)
+        return
+    end
+    
+    -- Determine single-target spell ID (typically the last in the list)
+    local singleSpellID = buffData.spellIDs and buffData.spellIDs[#buffData.spellIDs]
+    if not singleSpellID then
+        self:Print("BuffPower: No single spell ID found for buff:", buffKey)
+        return
+    end
+    
+    local spellName = GetSpellInfo(singleSpellID)
+    if spellName then
+        CastSpellByName(spellName, unitid)
+    else
+        self:Print("BuffPower: Could not get spell name for ID:", singleSpellID)
+    end
+end
+
+-- Cycle through prioritized group buffs and cast the first one needed
+function BuffPower:CycleGroupBuffs(groupNum)
+    if not groupNum then return end
+    
+    local PLAYER_CLASS = select(2, UnitClass("player")):upper()
+    local orderedBuffs = CLASS_BUFF_ORDER[PLAYER_CLASS]
+    
+    if not orderedBuffs then return end
+    
+    -- Get roster for the group
+    local roster = self:CollectRoster()
+    local groupMembers = roster[groupNum]
+    
+    if not groupMembers or #groupMembers == 0 then return end
+    
+    local profile = self.db and self.db.profile or {}
+    
+    -- Iterate through ordered buffs
+    for _, buffKey in ipairs(orderedBuffs) do
+        local isEnabled = profile["buffcheck_"..buffKey:lower()] ~= false
+        
+        if isEnabled then
+            local buffData = BuffPower_Buffs[PLAYER_CLASS] and BuffPower_Buffs[PLAYER_CLASS][buffKey]
+            
+            if buffData then
+                -- Check if any member in the group needs this buff
+                local groupActuallyNeedsBuff = false
+                
+                for _, playerInfo in ipairs(groupMembers) do
+                    if playerInfo.unit and buffData.spellNames and #buffData.spellNames > 0 then
+                        if not HasAnyBuffByName(playerInfo.unit, buffData.spellNames) then
+                            groupActuallyNeedsBuff = true
+                            break
+                        end
+                    end
+                end
+                
+                if groupActuallyNeedsBuff then
+                    -- Cast the group version of this buff
+                    self:CastSpecificGroupBuff(buffKey, groupNum)
+                    return -- Cast only one buff per cycle-click
+                end
+            end
+        end
+    end
+end
+
+-- Cycle through prioritized single-target buffs and cast the first one needed
+function BuffPower:CycleSingleTargetBuffs(unitid)
+    if not unitid then return end
+    
+    local PLAYER_CLASS = select(2, UnitClass("player")):upper()
+    local orderedBuffs = CLASS_BUFF_ORDER[PLAYER_CLASS]
+    
+    if not orderedBuffs then return end
+    
+    local profile = self.db and self.db.profile
+    
+    -- Iterate through ordered buffs
+    for _, buffKey in ipairs(orderedBuffs) do
+        local isEnabled = profile["buffcheck_"..buffKey:lower()] ~= false
+        
+        if isEnabled then
+            local buffData = BuffPower_Buffs[PLAYER_CLASS] and BuffPower_Buffs[PLAYER_CLASS][buffKey]
+            
+            if buffData then
+                -- Check if the unit needs this buff
+                local unitActuallyNeedsBuff = buffData.spellNames and #buffData.spellNames > 0 and (not HasAnyBuffByName(unitid, buffData.spellNames))
+                
+                if unitActuallyNeedsBuff then
+                    -- Cast the single-target version of this buff
+                    self:CastSpecificSingleBuff(buffKey, unitid)
+                    return -- Cast only one buff per cycle-click
+                end
+            end
+        end
+    end
+end
+
+-------------------------------------------------------------------------------
+-- Advanced Buff Logic Functions (Missing Implementation)
+-------------------------------------------------------------------------------
+
+-- Check if player has a specific talent
+function BuffPower:PlayerHasTalent(talentName)
+    if not talentName then return true end -- If no talent required, assume available
+    
+    -- Classic WoW talent checking is more complex and would need specific talent ID lookups
+    -- For now, return true to allow all buffs - this can be enhanced later
+    -- TODO: Implement proper talent checking based on Classic talent trees
+    return true
+end
+
+-- Scan player's available buffs and talents
+function BuffPower:ScanPlayerBuffsAndTalents()
+    if not self.availableBuffs then
+        self.availableBuffs = {}
+    end
+    
+    local PLAYER_CLASS = select(2, UnitClass("player")):upper()
+    local buffsForClass = BuffPower_Buffs[PLAYER_CLASS]
+    
+    if not buffsForClass then return end
+    
+    -- Clear previous scan
+    wipe(self.availableBuffs)
+    
+    -- Check each buff for availability
+    for buffKey, buffDetails in pairs(buffsForClass) do
+        -- Check if player knows the spell
+        local spellKnown = false
+        
+        -- Check single spells first
+        if buffDetails.spellIDs then
+            for _, spellID in ipairs(buffDetails.spellIDs) do
+                if IsSpellKnown(spellID) then
+                    spellKnown = true
+                    break
+                end
+            end
+        end
+        
+        -- If spell is known, check talent requirements
+        if spellKnown then
+            if self:PlayerHasTalent(buffDetails.talentRequired) then
+                self.availableBuffs[buffKey] = true
+            end
+        end
+    end
+end
+
+-- Advanced function to determine if a player needs a specific buff
+function BuffPower:NeedsBuff(playerInfo, buffKey)
+    if not playerInfo or not buffKey then return false end
+    
+    local PLAYER_CLASS = select(2, UnitClass("player")):upper()
+    local buffDetails = BuffPower_Buffs[PLAYER_CLASS] and BuffPower_Buffs[PLAYER_CLASS][buffKey]
+    
+    if not buffDetails then return false end
+    
+    -- Check if caster can cast this buff
+    if not self.availableBuffs or not self.availableBuffs[buffKey] then
+        return false
+    end
+    
+    -- Check if buff is enabled in options
+    local profile = self.db and self.db.profile or {}
+    if profile["buffcheck_"..buffKey:lower()] == false then
+        return false
+    end
+    
+    -- Check if player already has the buff
+    if buffDetails.spellNames and #buffDetails.spellNames > 0 then
+        if HasAnyBuffByName(playerInfo.unit, buffDetails.spellNames) then
+            return false -- Already has the buff
+        end
+    end
+    
+    -- TODO: Add more sophisticated checks:
+    -- - Target class suitability (e.g., Intellect only for mana users)
+    -- - Assignment grid preferences
+    -- - Stronger buff from other sources
+    -- - Target being dead/offline/out of range
+    
+    return true -- Needs the buff
+end
