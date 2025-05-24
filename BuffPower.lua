@@ -151,7 +151,8 @@ end
 
 -- Helper function to create and configure a group header frame
 local function _CreateGroupHeaderFrame(groupIndex, parentFrame, previousHeader, constants, groupData)
-    local groupHeader = CreateFrame("Frame", nil, parentFrame, BackdropTemplateMixin and "BackdropTemplate")
+    local groupHeader = CreateFrame("Button", nil, parentFrame, BackdropTemplateMixin and "BackdropTemplate")
+    groupHeader:RegisterForClicks("AnyUp")
     groupHeader:SetSize(constants.COL_WIDTH, constants.HEADER_HEIGHT_EFFECTIVE or 32) -- Assuming HEADER_HEIGHT_EFFECTIVE includes padding or use a fixed size like 32
     groupHeader:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
@@ -187,13 +188,16 @@ local function _CreateGroupHeaderFrame(groupIndex, parentFrame, previousHeader, 
         btn.icon = icon
         groupHeader.buffIcons[iconIdx] = btn
     end
-
+    
     local headerLabel = groupHeader:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     headerLabel:SetPoint("LEFT", groupHeader, "LEFT", 5, 0)
     headerLabel:SetPoint("RIGHT", groupHeader.buffIcons[5], "LEFT", -5, 0) -- Anchor to the left of the icons
     headerLabel:SetText("Group " .. groupIndex)
     headerLabel:SetJustifyH("LEFT")
-    groupHeader.label = headerLabel
+    groupHeader.label = headerLabel    -- Store group number attribute for cycle functions
+    groupHeader.groupNum = groupIndex
+    
+    -- Note: OnClick handler will be set later in _CreatePlayerRowFrames to avoid script conflicts
 
     return groupHeader
 end
@@ -256,7 +260,7 @@ local function _CreatePlayerRowFrames(groupIndex, groupHeader, constants, groupD
     end
 
     for rowIndex = 1, constants.ROWS_PER_GROUP do
-        local playerRow = CreateFrame("Frame", nil, groupHeader, BackdropTemplateMixin and "BackdropTemplate")
+        local playerRow = CreateFrame("Button", nil, groupHeader, BackdropTemplateMixin and "BackdropTemplate")
         playerRow:SetSize(constants.COL_WIDTH, constants.ROW_HEIGHT_EFFECTIVE or 32)
         playerRow:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
         playerRow:SetBackdropColor(0, 0, 0, 0)
@@ -292,7 +296,7 @@ local function _CreatePlayerRowFrames(groupIndex, groupHeader, constants, groupD
             btn.icon = icon
             playerRow.buffIcons[iconIdx] = btn
         end
-
+        
         local playerLabel = playerRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         playerLabel:SetPoint("LEFT", playerRow, "LEFT", 5, 0)
         playerLabel:SetPoint("RIGHT", playerRow.buffIcons[5], "LEFT", -5, 0)
@@ -300,14 +304,24 @@ local function _CreatePlayerRowFrames(groupIndex, groupHeader, constants, groupD
         playerLabel:SetJustifyH("LEFT")
         playerRow.label = playerLabel
         playerRow:Hide()
-        groupData.groupRows[groupIndex][rowIndex] = playerRow
-
-        -- Add OnEnter/OnLeave for player row
+        groupData.groupRows[groupIndex][rowIndex] = playerRow        -- Add click handler for cycle functionality (general area clicking)
+        playerRow:EnableMouse(true)
+        playerRow:SetScript("OnClick", function(self, button)
+            if button == "LeftButton" and self.unitid then
+                BuffPower:CycleSingleTargetBuffs(self.unitid)
+            end
+        end)        -- Add OnEnter/OnLeave for player row
         playerRow:SetScript("OnEnter", OnEnterAny)
         playerRow:SetScript("OnLeave", OnLeaveAny)
     end
 
-    -- Add OnEnter/OnLeave for header
+    -- Add all scripts for header after local functions are defined
+    groupHeader:EnableMouse(true)
+    groupHeader:SetScript("OnClick", function(self, button)
+        if button == "LeftButton" then
+            BuffPower:CycleGroupBuffs(self.groupNum)
+        end
+    end)
     groupHeader:SetScript("OnEnter", OnEnterAny)
     groupHeader:SetScript("OnLeave", OnLeaveAny)
 
@@ -503,9 +517,14 @@ function BuffPower:UpdateRosterUI()
                     local label = playerRow.label
                     local info = roster[g][r]
 
-                    playerRow:SetBackdropColor(0,0,0,0) -- Reset visuals
+                    if not info then
+                        playerRow:Hide()
+                        playerRow.unitid = nil
+                    else
+                        playerRow:SetBackdropColor(0,0,0,0) -- Reset visuals
+                        -- Set unitid for click-casting functionality
+                        playerRow.unitid = info.unit
 
-                    if info then
                         -- Color by class
                         if CLASS_COLORS and CLASS_COLORS[info.file] then
                             label:SetTextColor(CLASS_COLORS[info.file].r, CLASS_COLORS[info.file].g, CLASS_COLORS[info.file].b)
@@ -548,11 +567,13 @@ function BuffPower:UpdateRosterUI()
                                     icon.icon:SetTexture(texture)
                                 else
                                     icon.icon:SetTexture(nil)
-                                end
-                                -- Set macrotext to cast the correct spell: single target buff for player icons
+                                end                                -- Set macrotext to cast the correct spell: single target buff for player icons
                                 local spellName
-                                if buffData and buffData.spellNames and #buffData.spellNames > 0 then
-                                    -- Use last spellName in list for single target (Classic: Arcane Intellect, Mark of the Wild, etc.)
+                                if buffData and buffData.singleSpellNames and #buffData.singleSpellNames > 0 then
+                                    -- Use last singleSpellName for single target (Classic: Arcane Intellect, Mark of the Wild, etc.)
+                                    spellName = buffData.singleSpellNames[#buffData.singleSpellNames]
+                                elseif buffData and buffData.spellNames and #buffData.spellNames > 0 then
+                                    -- Fallback to last general spell name if no specific single spell names
                                     spellName = buffData.spellNames[#buffData.spellNames]
                                 end
                                 if spellName then
@@ -572,6 +593,7 @@ function BuffPower:UpdateRosterUI()
                             elseif icon then
                                 icon.icon:SetAlpha(0)
                                 icon:Hide()
+                                icon:SetAttribute("macrotext", "")
                             end
                         end
                         playerRow.label:ClearAllPoints()
@@ -605,7 +627,6 @@ function BuffPower:UpdateRosterUI()
                                 end
                             end
                         end
-
                         if needsAnyPlayerBuff then
                             playerRow:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8x8"})
                             playerRow:SetBackdropColor(1, 0.15, 0.15, 0.5) -- PallyPower red style
@@ -614,19 +635,22 @@ function BuffPower:UpdateRosterUI()
                         else
                             playerRow:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8x8"})
                             playerRow:SetBackdropColor(0.2, 1, 0.2, 0.6) -- PallyPower green style
+                            -- Clear unitid for click-casting functionality
+                            playerRow.unitid = nil
+                            
+                            label:SetText("")
+                            -- Reset backdrop color is already handled at the start of player row processing
                         end
-                    else -- No player info for this row
-                        label:SetText("")
-                        -- Reset backdrop color is already handled at the start of player row processing
+
                         if playerRow.buffIcons then
                             for iconIdx = 1, 5 do -- Assuming 5 icons as per UI setup
-                                local icon = playerRow.buffIcons[iconIdx]
-                                if icon then
+                                local icon = playerRow.buffIcons[iconIdx]                                if icon then
                                     icon.icon:SetAlpha(0)
                                     icon:Hide()
                                     icon.icon:SetTexture(nil)      -- Clear current texture
                                     icon.icon:SetDesaturated(false) -- Reset desaturation (normal state)
                                     icon.icon:SetVertexColor(1,1,1) -- Reset color to white (normal state)
+                                    icon:SetAttribute("macrotext", "") -- Clear macro text
                                 end
                             end
                         end
@@ -710,6 +734,19 @@ function BuffPower:UpdateRosterUI()
                                         end
                                     end
                                 end
+                            end                            -- Set macrotext to cast the correct spell: group buff for group header icons
+                            local groupSpellName
+                            if buffData and buffData.groupSpellNames and #buffData.groupSpellNames > 0 then
+                                -- Use first groupSpellName for group buffs (Classic: Prayer of Fortitude, Arcane Brilliance, etc.)
+                                groupSpellName = buffData.groupSpellNames[1]
+                            elseif buffData and buffData.spellNames and #buffData.spellNames > 0 then
+                                -- Fallback to first general spell name if no specific group spell names
+                                groupSpellName = buffData.spellNames[1]
+                            end
+                            if groupSpellName then
+                                icon:SetAttribute("macrotext", "/cast "..groupSpellName)
+                            else
+                                icon:SetAttribute("macrotext", "")
                             end
 
                             if groupIconMissingBuff then
@@ -723,6 +760,7 @@ function BuffPower:UpdateRosterUI()
                         elseif icon then
                             icon.icon:SetAlpha(0)
                             icon:Hide()
+                            icon:SetAttribute("macrotext", "")
                         end
                     end -- End of group header icon loop
 
@@ -972,4 +1010,40 @@ function BuffPower:NeedsBuff(playerInfo, buffKey)
     -- - Target being dead/offline/out of range
     
     return true -- Needs the buff
+end
+
+-------------------------------------------------------------------------------
+-- Helper function to collect current roster data (used by cycle functions)
+-------------------------------------------------------------------------------
+function BuffPower:CollectRoster()
+    local roster = {} -- [groupNum] = { {name=, class=, unit=, file=} ... }
+    for g = 1, 8 do roster[g] = {} end
+
+    local numRaid = GetNumGroupMembers and GetNumGroupMembers() or 0
+    if numRaid > 0 and IsInRaid() then
+        -- RAID: group->members
+        for i = 1, numRaid do
+            local name, rank, subgroup, level, class, fileName, zone, online, isDead, role, isML = GetRaidRosterInfo(i)
+            if name and subgroup and class and fileName then
+                local unit = "raid"..i
+                tinsert(roster[subgroup], {name=name, class=class, file=fileName, unit=unit})
+            end
+        end
+    else
+        -- PARTY/SOLO
+        local myselfName = UnitName("player")
+        local myselfClass = select(2, UnitClass("player"))
+        tinsert(roster[1], {name=myselfName, class=LOCALIZED_CLASS_NAMES_MALE[myselfClass] or myselfClass, file=myselfClass, unit="player"})
+        local numParty = GetNumSubgroupMembers and GetNumSubgroupMembers() or 0
+        for i=1, numParty do
+            local unit = "party"..i
+            if UnitExists(unit) then
+                local pname = UnitName(unit)
+                local pclass, classFile = UnitClass(unit)
+                tinsert(roster[1], {name=pname, class=pclass, file=classFile, unit=unit})
+            end
+        end
+    end
+    
+    return roster
 end
