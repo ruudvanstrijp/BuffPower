@@ -3,7 +3,7 @@
 ## Notes: Buff management for Mages, Priests, and Druids. Shows raid groups with buff status and enables quick buffing.
 ## Author: Ruuddie
 ## X-License: MIT
-## Version: v1.1.0-beta5
+## Version: v1.1.0-beta6
 ## SavedVariables: BuffPowerDB
 ## Category: Buffs
 ## X-Category: Buffs

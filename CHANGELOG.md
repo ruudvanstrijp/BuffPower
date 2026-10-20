@@ -5,9 +5,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [v1.1.0-beta6] - 2026-10-20
 
-**Testing status**: checked visually on the WoW Forever beta, solo only. Not yet tested on Classic Era or TBC Anniversary; that is planned for November 2026. The rewritten in-combat player list only runs on Classic Era and TBC Anniversary (Forever has no secure snippets), so it has not been tested anywhere yet.
+**Testing status**: checked on the WoW Forever beta, solo only: no Lua errors, the new drag handle shows and locks, the frame drags, the options open, and hovering a group out of combat opens its player list. Not yet tested on Classic Era or TBC Anniversary; that is planned for November 2026. The rewritten in-combat player list only runs on Classic Era and TBC Anniversary (Forever has no secure snippets), so it has not been tested anywhere yet. Until then this should ship as a Forever-only beta.
 
 ### Added
 - **Button Width Sliders**: Two new sliders in the options set the width of the group buttons (115 to 180 pixels) and the player buttons (120 to 225 pixels), for example to make room for longer names. Unlike the UI scale slider they leave icons and text at their size. A Reset Sizes button sets the scale and both widths back to their defaults.
