@@ -26,3 +26,22 @@ jobs:
         # 11508 (Classic) and 20505 (TBC Anniversary)
       env:
         GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
+
+    # The packager publishes the whole CHANGELOG.md as the release notes; replace them
+    # with just this version's section. Skipped when there is no section for the tag
+    # (for example a manual run on a branch).
+    - name: Use this version's changelog section as the release notes
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        TAG: ${{ github.ref_name }}
+      run: |
+        awk -v tag="$TAG" '
+          /^## \[/ { if (found) exit; if (index($0, "## [" tag "]") == 1) { found = 1; next } }
+          found && !started && /^[[:space:]]*$/ { next }
+          found { started = 1; print }
+        ' CHANGELOG.md > release-notes.md
+        if [ ! -s release-notes.md ]; then
+          echo "No CHANGELOG.md section for $TAG; keeping the packager's release notes."
+          exit 0
+        fi
+        gh release edit "$TAG" --notes-file release-notes.md
