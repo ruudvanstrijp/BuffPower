@@ -1,0 +1,37 @@
+package-as: BuffPower
+
+enable-nolib-creation: no
+
+# Libraries are committed to this repository rather than fetched at package time,
+# so the build ships exactly what was tested locally. Update them deliberately with
+# scripts/install-libs.ps1 (or the "Install Libs Locally" VS Code task), review the
+# diff, test, then commit. That script holds the upstream URLs.
+#
+# These are declared as embedded libraries purely so CurseForge records the relation;
+# nothing here is downloaded during packaging.
+embedded-libraries:
+  - ace3
+  - libstub
+  - callbackhandler
+  - libdatabroker-1-1
+  - libdbicon-1-0
+
+ignore:
+  - .git
+  - .gitignore
+  - .luacheckrc
+  - .vscode
+  - .examples
+  - docs
+  - scripts
+  - README.md
+  - CLAUDE.md
+  - CONTRIBUTING.md
+  - DESCRIPTION.md
+  - .github
+  - publish
+  - Media
+
+manual-changelog:
+  filename: CHANGELOG.md
+  markup-type: markdown

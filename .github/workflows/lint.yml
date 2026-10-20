@@ -1,0 +1,20 @@
+name: Lint
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  luacheck:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v7
+
+    # Settings come from .luacheckrc, the same file scripts/lint.ps1 uses locally.
+    - name: Luacheck
+      uses: lunarmodules/luacheck@v1
+      with:
+        args: . --codes

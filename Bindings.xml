@@ -1,0 +1,8 @@
+<Bindings>
+    <Binding name="BUFFPOWER_TOGGLE" header="BUFFPOWER" category="ADDONS">
+        BuffPower:SlashCommand("")
+    </Binding>
+    <Binding name="BUFFPOWER_OPTIONS" header="" category="ADDONS">
+        BuffPower:OpenConfigWindow()
+    </Binding>
+</Bindings>

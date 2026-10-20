@@ -1,0 +1,20 @@
+# Build and Release
+publish/
+*.zip
+
+# Editor / IDE
+*.swp
+
+# Downloaded dev tools (scripts/lint.ps1)
+.tools/
+
+# OS Metadata
+.DS_Store
+Thumbs.db
+
+# Backups
+*.bck
+*.bak
+
+#Example Addons
+.examples/

@@ -1,0 +1,44 @@
+name: Auto-Tag on Version Change
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'BuffPower.toc'
+  workflow_dispatch:
+
+jobs:
+  auto-tag:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+
+      - name: Check Version and Tag
+        run: |
+          # Extract version from TOC file (stripping whitespace)
+          VERSION=$(grep -i "^## Version:" BuffPower.toc | sed -e 's/^## Version:[[:space:]]*//' -e 's/[[:space:]]*$//' | tr -d '\r')
+          
+          echo "Detected version in TOC: '$VERSION'"
+          
+          # Check if tag exists
+          if git rev-parse "$VERSION" >/dev/null 2>&1; then
+            echo "Tag '$VERSION' already exists. Skipping."
+          else
+            echo "Tag '$VERSION' does not exist. Creating..."
+            
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            
+            git tag -a "$VERSION" -m "Release $VERSION"
+            git push origin "$VERSION"
+            
+            echo "Tagged and pushed $VERSION"
+          fi

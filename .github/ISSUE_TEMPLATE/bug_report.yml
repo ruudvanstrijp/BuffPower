@@ -1,0 +1,54 @@
+name: Bug report
+description: Something in BuffPower doesn't work as it should
+labels: [bug]
+body:
+  - type: dropdown
+    id: client
+    attributes:
+      label: Game client
+      multiple: true
+      options:
+        - Classic Era
+        - TBC Anniversary
+        - WoW Forever
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: BuffPower version
+      description: Shown in the addon list, or the file name you downloaded (for example v1.1.0-beta5).
+    validations:
+      required: true
+  - type: dropdown
+    id: class
+    attributes:
+      label: Your class
+      options:
+        - Mage
+        - Priest
+        - Druid
+        - Other
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+      description: Include whether you were solo, in a party or in a raid, and in or out of combat.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Join a raid
+        2. Hover over group 3
+        3. ...
+  - type: textarea
+    id: error
+    attributes:
+      label: Lua error
+      description: >
+        If there was a Lua error, paste the full text from BugSack/BugGrabber
+        (or the default error window), including the stack trace.
+      render: text

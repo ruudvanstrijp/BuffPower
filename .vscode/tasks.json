@@ -1,0 +1,118 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Deploy to All Clients",
+			"detail": "Deploy to Anniversary and the WoW Forever beta",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"${workspaceFolder}\\scripts\\deploy.ps1",
+				"-Flavor",
+				"anniversary,classic_beta"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
+		},
+		{
+			"label": "Deploy to WoW Forever (beta)",
+			"detail": "Deploy to _classic_beta_ only",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"${workspaceFolder}\\scripts\\deploy.ps1",
+				"-Flavor",
+				"classic_beta"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Deploy to WoW",
+			"detail": "Deploy to Anniversary only",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"${workspaceFolder}\\scripts\\deploy.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Lint",
+			"detail": "Run luacheck with .luacheckrc",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"${workspaceFolder}\\scripts\\lint.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": {
+				"owner": "luacheck",
+				"fileLocation": ["relative", "${workspaceFolder}"],
+				"severity": "warning",
+				"pattern": {
+					"regexp": "^\\s+(.+?):(\\d+):(\\d+): \\(([EW]\\d+)\\) (.*)$",
+					"file": 1,
+					"line": 2,
+					"column": 3,
+					"code": 4,
+					"message": 5
+				}
+			},
+			"group": "test"
+		},
+		{
+			"label": "Package Release",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"${workspaceFolder}\\scripts\\package.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Install Libs Locally",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"${workspaceFolder}\\scripts\\install-libs.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		}
+	]
+}

@@ -1,0 +1,20 @@
+## Interface: 11508, 20505, 16001
+## Title: BuffPower
+## Notes: Buff management for Mages, Priests, and Druids. Shows raid groups with buff status and enables quick buffing.
+## Author: Ruuddie
+## X-License: MIT
+## Version: v1.1.0-beta5
+## SavedVariables: BuffPowerDB
+## Category: Buffs
+## X-Category: Buffs
+## IconTexture: Interface\AddOns\BuffPower\Icons\icon
+## X-Curse-Project-ID: 1453785
+
+# Libraries
+embeds.xml
+
+# Core
+BuffPowerValues.lua
+BuffPower.xml
+BuffPower.lua
+BuffPowerOptions.lua

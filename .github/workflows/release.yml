@@ -1,0 +1,28 @@
+name: Release with BigWigs Packager
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v7
+      with:
+        fetch-depth: 0
+    
+    - name: Package and Release
+      uses: BigWigsMods/packager@v2
+        # We rely on the .toc file to determine the interface versions.
+        # Ensure BuffPower.toc has both interface numbers: 
+        # 11508 (Classic) and 20505 (TBC Anniversary)
+      env:
+        GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
