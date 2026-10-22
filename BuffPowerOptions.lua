@@ -111,8 +111,8 @@ function BuffPower:GetGeneralOptions()
             type = "toggle",
             name = "First Names Only",
             desc = "Show players by their first name, without their last name.",
-            -- Only WoW Forever has last names, and only that client has C_NameUtil
-            hidden = function() return not C_NameUtil end,
+            -- Only WoW Forever has last names; Blizzard shows its own surname option on the same check
+            hidden = function() return not (RegionalUniqueNamesEnabled and RegionalUniqueNamesEnabled()) end,
             get = function() return BuffPower.opt.FirstNamesOnly end,
             set = function(_, value)
                 BuffPower.opt.FirstNamesOnly = value

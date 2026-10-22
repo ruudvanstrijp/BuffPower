@@ -19,7 +19,7 @@
         "BUFFPOWER_DEFAULT_VALUES",
         "BuffPowerAnchor",
         "BuffPowerFrame",
-        "C_NameUtil",
+        "RegionalUniqueNamesEnabled",
         "SecureHandlerSetFrameRef",
         "SecureHandlerExecute",
         "RAID_CLASS_COLORS",

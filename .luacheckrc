@@ -63,7 +63,7 @@ read_globals = {
 
     -- Group and units
     "Ambiguate",
-    "C_NameUtil",
+    "RegionalUniqueNamesEnabled",
     "GetNumGroupMembers",
     "GetRaidRosterInfo",
     "GetUnitName",
