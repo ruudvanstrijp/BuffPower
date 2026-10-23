@@ -58,7 +58,7 @@ planned for around November 2026. So:
 
 1. Bump `## Version:` in `BuffPower.toc` and rename the `[Unreleased]` section of
    `CHANGELOG.md` to that version.
-2. Merge to `main`. A workflow creates the version tag, and the tag builds and publishes
-   the GitHub release with the BigWigs packager. Versions containing `beta` or `alpha`
-   become prereleases.
+2. Commit or merge to `main`; a release needs no pull request of its own. A workflow
+   creates the version tag, and the tag builds and publishes the GitHub release with the
+   BigWigs packager. Versions containing `beta` or `alpha` become prereleases.
 3. Upload to CurseForge by hand, choosing the game versions the file applies to.

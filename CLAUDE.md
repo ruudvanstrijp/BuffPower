@@ -28,6 +28,8 @@ Releasing is driven by the TOC version, not by manual tags:
 1. Bump `## Version:` in [BuffPower.toc](BuffPower.toc) and rename the matching section in [CHANGELOG.md](CHANGELOG.md) (the packager publishes that file as the release notes).
 2. Push to `main`. [auto_tag.yml](.github/workflows/auto_tag.yml) creates a git tag named after that version, and [release.yml](.github/workflows/release.yml) runs the BigWigs packager on it.
 
+A release needs no branch or pull request of its own: commit small releases straight to `main`. Pull requests are for larger pieces of work, and one release can bundle several of them.
+
 Keep `## Version:` an explicit version string: auto-tag reads it literally, so the packager's `@project-version@` keyword would create a tag of that name. A tag containing `beta` or `alpha` becomes a GitHub prerelease. CI does not upload to CurseForge; that is done by hand, choosing which game versions a file applies to.
 
 [CONTRIBUTING.md](CONTRIBUTING.md) repeats the commands, testing constraints, licensing rules and release steps for outside contributors; when one of those changes here, update it there too.
