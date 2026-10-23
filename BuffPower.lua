@@ -46,18 +46,14 @@ local function IsSpellInRange(spell, unit)
     return inRange
 end
 
--- The WoW Forever beta (1.60.1) ships a RestrictedExecution.lua that captures
--- loadstring_untainted, a function that build does not provide, so the client cannot
--- compile secure snippets at all - every SecureHandlerExecute and _on* attribute
--- throws. Without snippets the addon still works, it just cannot expand a group's
--- player list while in combat.
---
--- Every client's RestrictedExecution.lua (Classic Era, Classic and Retail alike)
--- compiles snippets through that global, so its presence is an exact test. Don't
--- probe by running a snippet instead: the failure is reported to the error handler
--- before it unwinds, so it shows up on screen even inside a pcall.
-local function CanUseSecureSnippets()
-    return loadstring_untainted ~= nil
+-- Forever's UnitInRange always returns a secret boolean, which addon code cannot
+-- test. Return nil (range unknown) instead. Classic has no issecretvalue.
+local issecretvalue = issecretvalue or function() return false end
+local UnitInRangeRaw = UnitInRange
+local function UnitInRange(unit)
+    local inRange = UnitInRangeRaw(unit)
+    if issecretvalue(inRange) then return nil end
+    return inRange
 end
 
 -- Forever makes auras secret in combat, and the aura API then refuses addon reads
@@ -178,12 +174,6 @@ function BuffPower:OnInitialize()
 
     -- Create UI layout
     self:CreateLayout()
-
-    -- Tell the user why in-combat behaviour is reduced on clients that cannot
-    -- compile secure snippets, rather than letting it look like a bug.
-    if not CanUseSecureSnippets() then
-        self:Print("This client cannot run secure addon code, so group player lists will not expand while you are in combat.")
-    end
 
     -- Setup minimap icon
     self:SetupMinimapIcon()
@@ -877,9 +867,6 @@ local function AppendFrameRef(owner, listName, frame)
 end
 
 function BuffPower:SetUpCombatPlayerLists()
-    -- Purely secure-handler wiring; without snippet support there is nothing to set up.
-    if not CanUseSecureSnippets() then return end
-
     local numGroups = BUFFPOWER_CONSTANTS.MAX_RAID_GROUPS
     for groupNum = 1, numGroups do
         local groupButton = self.groupButtons[groupNum]
@@ -1274,7 +1261,7 @@ function BuffPower:UpdateGroupButton(button, groupNum)
         -- Try to find someone valid and in range (generic check) to avoid casting on self if target is OOR
         for _, playerInfo in ipairs(members) do
              local isPlayer = (playerInfo.unitid == "player")
-             if playerInfo.isOnline and not playerInfo.isDead and (isPlayer or (UnitIsVisible(playerInfo.unitid) and UnitInRange(playerInfo.unitid))) then
+             if playerInfo.isOnline and not playerInfo.isDead and (isPlayer or (UnitIsVisible(playerInfo.unitid) and UnitInRange(playerInfo.unitid) ~= false)) then
                 targetUnit = playerInfo.unitid
                 break
              end

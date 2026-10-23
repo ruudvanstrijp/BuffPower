@@ -48,13 +48,13 @@ read_globals = {
 
     -- Secure execution
     "InCombatLockdown",
-    "loadstring_untainted",
     "SecureHandlerExecute",
     "SecureHandlerSetFrameRef",
 
     -- Spells and auras
     "AuraUtil",
     "C_Secrets",
+    "issecretvalue", -- Forever only; BuffPower.lua falls back when it is missing
     "C_Spell",
     "C_SpellBook",
     "GetSpellInfo",

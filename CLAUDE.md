@@ -70,7 +70,8 @@ The top of `BuffPower.lua` holds a compatibility layer, and new API usage should
 
 - `GetSpellInfo` and `IsSpellKnown` prefer the Classic global and fall back to `C_Spell` / `C_SpellBook` (Forever is Mainline-family and lacks the globals). The wrappers keep Classic return signatures. Aura detection uses `AuraUtil.FindAuraByName`, which every client provides.
 - `IsSpellInRange` is always normalized to `1`/`0`/`nil`, because callers test `~= 0` and Mainline returns booleans.
-- `CanUseSecureSnippets()` returns whether `loadstring_untainted` exists. Every client's `RestrictedExecution.lua` compiles snippets through it, and the Forever beta does not provide it, so all snippet setup is guarded by this check. Don't probe by executing a snippet: the failure reaches the error handler even inside `pcall`.
+- `UnitInRange` returns `nil` (range unknown) instead of Forever's secret boolean. Blizzard's API docs (`Blizzard_APIDocumentationGenerated` on the `forever` branch of wow-ui-source) mark such functions `SecretReturns = true`; check there before testing a new unit API's result.
+- Secure snippets are set up unconditionally. Forever beta build 69893 could not compile them (forever-bugs#74, fixed in 70009). Don't detect snippet support by checking `loadstring_untainted`: Blizzard's environment cleanup removes that global on every client before addons load (issue #14). Don't probe by executing a snippet either: on a broken client the failure reaches the error handler even inside `pcall`.
 
 ### Forever-specific constraints
 

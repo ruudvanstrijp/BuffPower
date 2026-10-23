@@ -32,7 +32,7 @@ BuffPower shows your raid or party grouped the way the game groups it, with each
 * Burning Crusade Classic
 * WoW Forever (beta)
 
-On the WoW Forever beta, a group's player list can't be expanded while you are in combat, because of a client issue on Blizzard's side. Everything else works, and this will start working again without an update once Blizzard fixes the client.
+On WoW Forever, the game hides buffs from addons during combat. BuffPower keeps showing the status it saw before the fight, and buffs cast during combat show up once it ends.
 
 ---
 

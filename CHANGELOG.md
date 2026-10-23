@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.1.0-beta7] - 2026-10-23
+
+**Testing status**: checked on the WoW Forever beta: hovering a group in combat opens its player list, and buffing from it works. The range fix has not been seen in a group yet. Not yet tested on Classic Era or TBC Anniversary; that is planned for November 2026. Until then this should ship as a Forever-only beta.
+
+### Fixed
+- **Player List in Combat** ([#14](https://github.com/ruudvanstrijp/BuffPower/issues/14)): Hovering over a group in combat opens its player list again. Since v1.1.0-beta1 this was switched off on every client, because BuffPower used a check that wrongly concluded the game could not run the secure code it needs. On WoW Forever it works now that Blizzard has fixed the client.
+- **Lua Error in a Group on WoW Forever**: BuffPower could report "attempt to perform boolean test on a secret boolean value" in a party or raid, because WoW Forever hides the result of the game's group range check from addons.
+
 ## [v1.1.0-beta6] - 2026-10-20
 
 **Testing status**: checked on the WoW Forever beta, solo only: no Lua errors, the new drag handle shows and locks, the frame drags, the options open, and hovering a group out of combat opens its player list. Not yet tested on Classic Era or TBC Anniversary; that is planned for November 2026. The rewritten in-combat player list only runs on Classic Era and TBC Anniversary (Forever has no secure snippets), so it has not been tested anywhere yet. Until then this should ship as a Forever-only beta.
