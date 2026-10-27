@@ -9,6 +9,7 @@
 ## X-Category: Buffs
 ## IconTexture: Interface\AddOns\BuffPower\Icons\icon
 ## X-Curse-Project-ID: 1453785
+## X-Wago-ID: bGoY8k60
 
 # Libraries
 embeds.xml
