@@ -210,7 +210,7 @@ function BuffPower:OnEnable()
     -- Initial update
     self:UpdateRoster()
 
-    self:Print("BuffPower enabled for " .. self.playerClass)
+    self:Debug("BuffPower enabled for " .. self.playerClass)
 end
 
 function BuffPower:OnDisable()
@@ -982,12 +982,14 @@ function BuffPower:PerformPlayerCycle(delta, groupNum, playerIndex)
     current = (current + (delta > 0 and 1 or -1)) % (numKeys + 1)
     self.charOpt.playerAssignments[unitName] = keys[current]
 
-    -- Feedback
-    local statusText = "Auto"
-    if current > 0 then
-        statusText = "Force " .. BuffPower_Spells[self.playerClass][keys[current]].displayName
+    -- The icons on the button already show the change; chat feedback is for debugging
+    if self.opt.debug then
+        local statusText = "Auto"
+        if current > 0 then
+            statusText = "Force " .. BuffPower_Spells[self.playerClass][keys[current]].displayName
+        end
+        self:Debug("Assignment for " .. unitName .. ": " .. statusText)
     end
-    self:Print("Assignment for " .. unitName .. ": " .. statusText)
 
     -- Trigger Update
     self:UpdateBuffStatus()
@@ -1244,6 +1246,19 @@ local function Tint(icon, hasBuff)
     icon.texture:SetVertexColor(unpack(hasBuff and COLORS.iconBuffed or COLORS.iconMissing))
 end
 
+-- Lays icons out in BuffPower_BuffPriority order, main buff first, so an optional buff
+-- (Thorns, Amplify or Dampen Magic) always sits behind it; pairs() order is arbitrary
+local priorityRank = {}
+for class, keys in pairs(BuffPower_BuffPriority) do
+    priorityRank[class] = {}
+    for i, key in ipairs(keys) do priorityRank[class][key] = i end
+end
+
+local function SortIcons(validIcons, class)
+    local rank = priorityRank[class] or {}
+    tsort(validIcons, function(a, b) return (rank[a.key] or 99) < (rank[b.key] or 99) end)
+end
+
 function BuffPower:UpdateGroupButton(button, groupNum)
     local groupStatus = self.groupBuffStatus[groupNum]
     if not groupStatus then return end
@@ -1350,6 +1365,7 @@ function BuffPower:UpdateGroupButton(button, groupNum)
     end
 
     -- Position icons right-aligned: [Icon 1][Icon 2][Icon 3]| with a 24px step (18px icon + 6px gap)
+    SortIcons(validIcons, self.playerClass)
     local numIcons = #validIcons
     for i, item in ipairs(validIcons) do
         local icon = item.icon
@@ -1586,6 +1602,7 @@ function BuffPower:UpdatePlayerBuffIcons(playerButton, playerInfo)
     end
 
     -- Position icons right-aligned to avoid overlapping with long names
+    SortIcons(validIcons, self.playerClass)
     local numIcons = #validIcons
 
     -- The name gets all the width the shown icons leave free

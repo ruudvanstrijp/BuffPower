@@ -169,7 +169,7 @@ BuffPower_Spells = {
 }
 
 -------------------------------------------------------------------
--- Buff Priority Order (for cycle-clicking)
+-- Buff Priority Order: which buff a click casts first, and the icon order (left to right)
 -------------------------------------------------------------------
 BuffPower_BuffPriority = {
     MAGE = { "intellect", "amplify_magic", "dampen_magic" },

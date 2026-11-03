@@ -1,8 +1,8 @@
 # Deploys the addon into one or more local WoW clients for testing.
 #
 #   .\scripts\deploy.ps1                                  # anniversary (default)
-#   .\scripts\deploy.ps1 -Flavor classic_beta             # WoW Forever beta
-#   .\scripts\deploy.ps1 -Flavor anniversary,classic_beta # both, for side-by-side testing
+#   .\scripts\deploy.ps1 -Flavor forever                  # WoW Forever
+#   .\scripts\deploy.ps1 -Flavor anniversary,classic_era,forever  # all three clients
 #   .\scripts\deploy.ps1 -Flavor all                      # every flavor installed
 #
 # The WoW install is auto-detected; override with -WowRoot or the WOW_ROOT env var.
@@ -24,7 +24,7 @@ $Flavor = $Flavor |
 
 $flavorFolders = @{
     anniversary  = "_anniversary_"
-    classic_beta = "_classic_beta_"
+    forever      = "_forever_"
     classic_era  = "_classic_era_"
     classic      = "_classic_"
     retail       = "_retail_"

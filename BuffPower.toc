@@ -1,9 +1,9 @@
-## Interface: 11508, 20505, 16001
+## Interface: 11509, 20506, 16001
 ## Title: BuffPower
 ## Notes: Buff management for Mages, Priests, and Druids. Shows raid groups with buff status and enables quick buffing.
 ## Author: Ruuddie
 ## X-License: MIT
-## Version: v1.1.0-beta7
+## Version: v1.1.0
 ## SavedVariables: BuffPowerDB
 ## Category: Buffs
 ## X-Category: Buffs

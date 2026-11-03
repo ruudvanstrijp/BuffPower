@@ -19,29 +19,33 @@ jobs:
       with:
         fetch-depth: 0
     
-    - name: Package and Release
-      uses: BigWigsMods/packager@v2
-        # We rely on the .toc file to determine the interface versions.
-        # Ensure BuffPower.toc has both interface numbers: 
-        # 11508 (Classic) and 20505 (TBC Anniversary)
+    # The packager publishes CHANGELOG.md as the release notes on GitHub, CurseForge and
+    # Wago. Trim it to this version's section first, leaving out the "Testing status"
+    # line, which is for the maintainer. Skipped when there is no section for the tag
+    # (for example a manual run on a branch); the zip's CHANGELOG.md is trimmed too.
+    - name: Use only this version's changelog section as the release notes
       env:
-        GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
-
-    # The packager publishes the whole CHANGELOG.md as the release notes; replace them
-    # with just this version's section. Skipped when there is no section for the tag
-    # (for example a manual run on a branch).
-    - name: Use this version's changelog section as the release notes
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         TAG: ${{ github.ref_name }}
       run: |
         awk -v tag="$TAG" '
           /^## \[/ { if (found) exit; if (index($0, "## [" tag "]") == 1) { found = 1; next } }
+          found && /^\*\*Testing status\*\*/ { next }
           found && !started && /^[[:space:]]*$/ { next }
           found { started = 1; print }
         ' CHANGELOG.md > release-notes.md
-        if [ ! -s release-notes.md ]; then
-          echo "No CHANGELOG.md section for $TAG; keeping the packager's release notes."
-          exit 0
+        if [ -s release-notes.md ]; then
+          mv release-notes.md CHANGELOG.md
+        else
+          echo "No CHANGELOG.md section for $TAG; publishing the whole file."
+          rm release-notes.md
         fi
-        gh release edit "$TAG" --notes-file release-notes.md
+
+    # Game versions come from the TOC's ## Interface line, and the CurseForge and Wago
+    # projects from X-Curse-Project-ID and X-Wago-ID. Tags containing beta or alpha
+    # upload as beta/alpha files.
+    - name: Package and Release
+      uses: BigWigsMods/packager@v2
+      env:
+        GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
+        CF_API_KEY: ${{ secrets.CF_API_KEY }}
+        WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}

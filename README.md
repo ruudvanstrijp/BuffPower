@@ -35,7 +35,7 @@ The release process is fully automated. The workflow monitors the `BuffPower.toc
 
 #### Step 1: Update Version & Changelog
 1.  Open `BuffPower.toc` and increment the `## Version:` field (e.g., to `v1.0.1`).
-2.  Update `CHANGELOG.md` with the new version and release notes.
+2.  Update `CHANGELOG.md` with the new version and release notes. That version's section becomes the release notes on all three sites.
 
 #### Step 2: Commit & Push
 Commit these changes and push to the `main` branch.
@@ -45,7 +45,7 @@ GitHub Actions will automatically:
 1.  Detect the version change in `BuffPower.toc`.
 2.  Create a git tag for that version (e.g., `v1.0.1`).
 3.  Trigger the release workflow.
-4.  Package the addon and publish a new release on GitHub.
+4.  Package the addon, publish a new release on GitHub and upload it to CurseForge and Wago.
 
 *(Note: You can still manually create tags if you prefer, which will also trigger a release.)*
 
@@ -107,7 +107,7 @@ release.
 
 3. Test in-game before committing:
    ```powershell
-   .\scripts\deploy.ps1 -Flavor anniversary,classic_beta
+   .\scripts\deploy.ps1 -Flavor anniversary,classic_era,forever
    ```
 
 4. Commit the result:

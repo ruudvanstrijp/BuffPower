@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.1.0] - 2026-11-03
+
+The first full release since v1.0.9, for Classic Era, TBC Anniversary and WoW Forever. It includes everything from the v1.1.0 betas.
+
+### Added
+- **WoW Forever Support**: BuffPower now works on WoW Forever, including the player list when you hover over a group in combat. Forever hides buffs from addons during combat, so BuffPower keeps the status it last saw and only marks a buff missing once it has run out; buffs cast during combat show up when combat ends.
+- **First Names Only**: On WoW Forever, where characters have a first and a last name, you can choose to show players by their first name only. The full name still shows in the tooltip.
+- **Button Width Sliders**: Two sliders set the width of the group buttons and the player buttons, for example to make room for longer names. A Reset Sizes button sets the scale and both widths back to their defaults.
+
+### Changed
+- **MIT License**: BuffPower's source is now available under the MIT License, and it's open source on [GitHub](https://github.com/ruudvanstrijp/BuffPower).
+- **Modernised Look**: Flat buttons with a thin edge, cropped buff icons, darker green and red so names stay readable, and missing buffs shown as greyed-out icons. The remaining buff time sits on the bottom of each icon, and icons light up when you hover over them.
+- **Longer Player Names**: A player name uses all the space next to the buff icons that are actually shown.
+- **Settings per Character**: The groups you are responsible for and the scroll-wheel buff choices are now saved per character, so your priest and mage can cover different groups. Each character starts from your previous settings.
+- **Tidier Options**: General Settings are grouped into Visibility, Display and Size; class names are shown in their class colours.
+- **Quieter Chat**: BuffPower no longer posts a message in chat when you log in or when you change a player's buff with the scroll wheel. `/bp debug` turns these messages back on.
+
+### Fixed
+- **Changes During Combat**: Roster changes, group moves and newly learned spells during combat are applied as soon as combat ends, instead of waiting for the next roster change.
+- **Pets With the Same Name**: Two pets with the same name in one group no longer share a single buff status.
+- **Single-Target Fallback**: When you have not learned the group version of a buff, left-clicking a group icon targets the same player as right-clicking it.
+- **Minimap Button**: The minimap button now always appears; before, it only did when another addon happened to load a library BuffPower needs.
+
 ## [v1.1.0-beta7] - 2026-10-23
 
 **Testing status**: checked on the WoW Forever beta: hovering a group in combat opens its player list, and buffing from it works. The range fix has not been seen in a group yet. Not yet tested on Classic Era or TBC Anniversary; that is planned for November 2026. Until then this should ship as a Forever-only beta.

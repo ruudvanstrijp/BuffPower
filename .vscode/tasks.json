@@ -3,7 +3,7 @@
 	"tasks": [
 		{
 			"label": "Deploy to All Clients",
-			"detail": "Deploy to Anniversary and the WoW Forever beta",
+			"detail": "Deploy to Classic Era, Anniversary and WoW Forever",
 			"type": "shell",
 			"command": "powershell",
 			"args": [
@@ -13,7 +13,7 @@
 				"-File",
 				"${workspaceFolder}\\scripts\\deploy.ps1",
 				"-Flavor",
-				"anniversary,classic_beta"
+				"anniversary,classic_era,forever"
 			],
 			"isBackground": false,
 			"problemMatcher": [],
@@ -23,8 +23,8 @@
 			}
 		},
 		{
-			"label": "Deploy to WoW Forever (beta)",
-			"detail": "Deploy to _classic_beta_ only",
+			"label": "Deploy to WoW Forever",
+			"detail": "Deploy to _forever_ only",
 			"type": "shell",
 			"command": "powershell",
 			"args": [
@@ -34,7 +34,7 @@
 				"-File",
 				"${workspaceFolder}\\scripts\\deploy.ps1",
 				"-Flavor",
-				"classic_beta"
+				"forever"
 			],
 			"isBackground": false,
 			"problemMatcher": [],

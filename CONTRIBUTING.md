@@ -22,8 +22,8 @@ PowerShell and are also available as VS Code tasks (Ctrl+Shift+B deploys to all 
 
 ```powershell
 .\scripts\deploy.ps1                                   # copy to TBC Anniversary (default)
-.\scripts\deploy.ps1 -Flavor classic_beta              # WoW Forever beta
-.\scripts\deploy.ps1 -Flavor anniversary,classic_beta  # both
+.\scripts\deploy.ps1 -Flavor forever                   # WoW Forever
+.\scripts\deploy.ps1 -Flavor anniversary,classic_era,forever  # all three clients
 .\scripts\lint.ps1                                     # luacheck, must report 0 warnings
 ```
 
@@ -37,15 +37,12 @@ new WoW API calls go through the compatibility layer so they work on all three c
 
 ## Testing
 
-One `.toc` serves Classic Era, TBC Anniversary and WoW Forever. At the moment the
-maintainer can only test on the WoW Forever beta; Classic Era and Anniversary testing is
-planned for around November 2026. So:
+One `.toc` serves Classic Era, TBC Anniversary and WoW Forever, and the maintainer
+tests on all three. So:
 
 - Say in your pull request which clients you tested on.
-- If you can test on Classic Era or Anniversary, that is especially welcome.
-- Changes that affect Classic Era or Anniversary count as untested until someone has
-  tried them there. The "Testing status" line under Unreleased in
-  [CHANGELOG.md](CHANGELOG.md) tracks this.
+- A change counts as untested on a client until someone has tried it there. The
+  "Testing status" line under Unreleased in [CHANGELOG.md](CHANGELOG.md) tracks this.
 
 ## Pull requests
 
@@ -59,6 +56,6 @@ planned for around November 2026. So:
 1. Bump `## Version:` in `BuffPower.toc` and rename the `[Unreleased]` section of
    `CHANGELOG.md` to that version.
 2. Commit or merge to `main`; a release needs no pull request of its own. A workflow
-   creates the version tag, and the tag builds and publishes the GitHub release with the
-   BigWigs packager. Versions containing `beta` or `alpha` become prereleases.
-3. Upload to CurseForge by hand, choosing the game versions the file applies to.
+   creates the version tag, and the tag runs the BigWigs packager, which publishes the
+   GitHub release and uploads to CurseForge and Wago for all three clients. Versions
+   containing `beta` or `alpha` become prereleases and beta/alpha files.

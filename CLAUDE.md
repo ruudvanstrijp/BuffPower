@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-BuffPower is a World of Warcraft addon (Lua 5.1 + XML, Ace3) for Mages, Priests and Druids: a PallyPower-style grid of raid groups showing who is missing your class buffs, with click-to-cast buttons. One TOC, [BuffPower.toc](BuffPower.toc), targets three clients through its `## Interface:` list: Classic Era (`11508`), TBC Anniversary (`20505`) and WoW Forever (`16001`, beta). There is no build step or test suite: beyond the luacheck lint, verification means deploying to a client and `/reload`.
+BuffPower is a World of Warcraft addon (Lua 5.1 + XML, Ace3) for Mages, Priests and Druids: a PallyPower-style grid of raid groups showing who is missing your class buffs, with click-to-cast buttons. One TOC, [BuffPower.toc](BuffPower.toc), targets three clients through its `## Interface:` list: Classic Era (`11509`), TBC Anniversary (`20506`) and WoW Forever (`16001`, beta). There is no build step or test suite: beyond the luacheck lint, verification means deploying to a client and `/reload`.
 
 ## Commands
 
@@ -12,8 +12,8 @@ All scripts are Windows PowerShell and are also wired up as VS Code tasks in [.v
 
 ```powershell
 .\scripts\deploy.ps1                                   # deploy to Anniversary (default)
-.\scripts\deploy.ps1 -Flavor classic_beta              # WoW Forever beta
-.\scripts\deploy.ps1 -Flavor anniversary,classic_beta  # both
+.\scripts\deploy.ps1 -Flavor forever                   # WoW Forever
+.\scripts\deploy.ps1 -Flavor anniversary,classic_era,forever  # all three clients
 .\scripts\install-libs.ps1                             # refresh everything in Libs/ from upstream
 ```
 
@@ -25,12 +25,12 @@ All scripts are Windows PowerShell and are also wired up as VS Code tasks in [.v
 
 Releasing is driven by the TOC version, not by manual tags:
 
-1. Bump `## Version:` in [BuffPower.toc](BuffPower.toc) and rename the matching section in [CHANGELOG.md](CHANGELOG.md) (the packager publishes that file as the release notes).
-2. Push to `main`. [auto_tag.yml](.github/workflows/auto_tag.yml) creates a git tag named after that version, and [release.yml](.github/workflows/release.yml) runs the BigWigs packager on it.
+1. Bump `## Version:` in [BuffPower.toc](BuffPower.toc) and rename the matching section in [CHANGELOG.md](CHANGELOG.md). `release.yml` trims the changelog to that section, minus its "Testing status" line, and the packager publishes the result as the release notes on GitHub, CurseForge and Wago.
+2. Push to `main`. [auto_tag.yml](.github/workflows/auto_tag.yml) creates a git tag named after that version, and [release.yml](.github/workflows/release.yml) runs the BigWigs packager on it, which publishes the GitHub release and uploads to CurseForge and Wago.
 
 A release needs no branch or pull request of its own: commit small releases straight to `main`. Pull requests are for larger pieces of work, and one release can bundle several of them.
 
-Keep `## Version:` an explicit version string: auto-tag reads it literally, so the packager's `@project-version@` keyword would create a tag of that name. A tag containing `beta` or `alpha` becomes a GitHub prerelease. CI does not upload to CurseForge; that is done by hand, choosing which game versions a file applies to.
+Keep `## Version:` an explicit version string: auto-tag reads it literally, so the packager's `@project-version@` keyword would create a tag of that name. A tag containing `beta` or `alpha` becomes a GitHub prerelease and a beta/alpha file on CurseForge and Wago. Uploads use the `CF_API_KEY` and `WAGO_API_TOKEN` repo secrets and the TOC's `X-Curse-Project-ID` and `X-Wago-ID`; the game versions come from `## Interface:`, so every release goes to all three clients. Pushing a version bump to `main` therefore publishes to all three sites with no further step: get the user's OK first.
 
 [CONTRIBUTING.md](CONTRIBUTING.md) repeats the commands, testing constraints, licensing rules and release steps for outside contributors; when one of those changes here, update it there too.
 
@@ -81,6 +81,6 @@ Forever shares Mainline's addon restrictions ("addon disarmament"). Aura and uni
 
 ## Testing constraints
 
-Changes affecting Classic Era or Anniversary currently can't be verified in-game (only the Forever beta is available to the maintainer, until a subscription planned for around November 2026). Treat anything that alters Classic behaviour as untested until it has been, and release it for Forever only (CurseForge beta file, Forever game version only) until then.
+All three clients can be tested in-game (since November 2026; before that only Forever could be, which is why older changelog entries say Classic Era and Anniversary were untested). A change counts as verified on a client only once it has been tried there. To release for some clients only, add `with: args: -g <type>` (for example `-g forever`) to the packager step; the packager then rewrites the zip's TOC to those clients, so that zip, the GitHub one included, won't load on the others (see issue #17).
 
-The Unreleased section of [CHANGELOG.md](CHANGELOG.md) carries a "Testing status" line saying which clients the pending changes were verified on. Keep it current: update it when something is tested, and remove it once the Classic and Anniversary tests have passed.
+The Unreleased section of [CHANGELOG.md](CHANGELOG.md) carries a "Testing status" line saying which clients the pending changes were verified on. Keep it current: update it when something is tested, and remove it once the changes have passed on all three clients. It never reaches the release notes: `release.yml` drops it.
