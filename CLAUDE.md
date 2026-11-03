@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-BuffPower is a World of Warcraft addon (Lua 5.1 + XML, Ace3) for Mages, Priests and Druids: a PallyPower-style grid of raid groups showing who is missing your class buffs, with click-to-cast buttons. One TOC, [BuffPower.toc](BuffPower.toc), targets three clients through its `## Interface:` list: Classic Era (`11509`), TBC Anniversary (`20506`) and WoW Forever (`16001`, beta). There is no build step or test suite: beyond the luacheck lint, verification means deploying to a client and `/reload`.
+BuffPower is a World of Warcraft addon (Lua 5.1 + XML, Ace3) for Mages, Priests and Druids: a PallyPower-style grid of raid groups showing who is missing your class buffs, with click-to-cast buttons. One TOC, [BuffPower.toc](BuffPower.toc), targets three clients through its `## Interface:` list: Classic Era (`11509`), TBC Anniversary (`20506`) and WoW Forever (`16001`). There is no build step or test suite: beyond the luacheck lint, verification means deploying to a client and `/reload`.
 
 ## Commands
 

@@ -44,6 +44,28 @@ tests on all three. So:
 - A change counts as untested on a client until someone has tried it there. The
   "Testing status" line under Unreleased in [CHANGELOG.md](CHANGELOG.md) tracks this.
 
+## Libraries
+
+The Ace3 and other libraries in `Libs/` are committed to this repository, and `.pkgmeta`
+lists them under `embedded-libraries` rather than `externals`. The packager therefore
+ships exactly the files in `Libs/`, so a release contains what was tested locally.
+A library is only loaded when it is listed in [embeds.xml](embeds.xml).
+
+> **Important:** the packager only ships files tracked by git. A library that is on disk
+> but not committed works locally and is silently missing from the release zip.
+
+To update them:
+
+1. Run `.\scripts\install-libs.ps1` (or the "Install Libs Locally" task). It fetches every
+   library from the upstream URLs listed in the script, using an svn client when one is
+   installed (`winget install Slik.Subversion`) and plain HTTP otherwise.
+2. Review the diff; `git status` shows exactly what upstream changed, including removed
+   files.
+3. Deploy to all three clients and check that the addon loads without errors, the minimap
+   button and options work, group detection, buff status and casting work, and settings
+   survive a `/reload`.
+4. Commit `Libs/`.
+
 ## Pull requests
 
 - Target `main`, one topic per pull request.
