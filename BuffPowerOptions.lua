@@ -92,6 +92,17 @@ function BuffPower:GetGeneralOptions()
             end,
             order = 13,
         },
+        ShowSelfBuffs = {
+            type = "toggle",
+            name = "Show Self Buffs",
+            desc = "Show rows above the groups for buffs you cast on yourself, such as Frost Armor or Inner Fire. Scroll over a row to change its buff or turn it off.",
+            get = function() return BuffPower.opt.ShowSelfBuffs end,
+            set = function(_, value)
+                BuffPower.opt.ShowSelfBuffs = value
+                BuffPower:UpdateLayout()
+            end,
+            order = 14,
+        },
         headerDisplay = {
             type = "header",
             name = "Display",

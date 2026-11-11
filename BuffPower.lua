@@ -29,10 +29,10 @@ if not GetSpellInfo and C_Spell and C_Spell.GetSpellInfo then
     end
 end
 
-local IsSpellKnown = IsSpellKnown
-if not IsSpellKnown and C_SpellBook and C_SpellBook.IsSpellKnown then
-    IsSpellKnown = C_SpellBook.IsSpellKnown
-end
+-- Whether a spell is in your spellbook. The deprecated IsSpellKnown global is only
+-- a fallback: it misses spells from Season of Discovery runes (Molten Armor), which
+-- C_SpellBook.IsSpellInSpellBook does find.
+local IsSpellInSpellBook = (C_SpellBook and C_SpellBook.IsSpellInSpellBook) or IsSpellKnown
 
 -- Classic returns 1/0/nil, Mainline returns true/false/nil, and the deprecated
 -- Mainline global is inconsistent between builds. Callers test `~= 0`, so coerce
@@ -141,6 +141,7 @@ BuffPower.playerClass = nil
 BuffPower.availableBuffs = {}
 BuffPower.raidComposition = {}
 BuffPower.groupBuffStatus = {}
+BuffPower.selfStatus = {} -- self-buff slot key -> { hasBuff, expires }
 BuffPower.initialized = false
 
 -------------------------------------------------------------------
@@ -329,6 +330,16 @@ function BuffPower:UpdateUI(displayOnly)
         end
     end
 
+    for _, button in ipairs(self.selfButtons) do
+        if button:IsShown() then
+            if displayOnly then
+                self:UpdateSelfButtonDisplay(button)
+            else
+                self:UpdateSelfButton(button)
+            end
+        end
+    end
+
     for groupNum, playerButtons in pairs(self.playerButtons) do
         local members = self.raidComposition[groupNum]
         for i, playerButton in pairs(playerButtons) do
@@ -401,7 +412,7 @@ end
 -- Highest known rank of a spell variant (rankIDs run high to low), or nil when none is learned.
 local function FirstKnownRank(variant)
     for _, id in ipairs(variant.rankIDs or { variant.spellID }) do
-        if IsSpellKnown(id) then return id end
+        if IsSpellInSpellBook(id) then return id end
     end
 end
 
@@ -427,6 +438,7 @@ function BuffPower:ScanPlayerBuffs()
         end
     end
 
+    self:ScanSelfBuffs()
     self:UpdateLayout()
 end
 
@@ -588,6 +600,8 @@ function BuffPower:UpdateBuffStatus()
             end
         end
     end
+
+    self:UpdateSelfBuffStatus()
 end
 
 -- With lastStatus (auras secret), buffs are not read but carried over from it, dropping
@@ -807,6 +821,8 @@ function BuffPower:CreateLayout()
     self.Frame:SetClampedToScreen(true)
 
     self:RestoreFramePosition()
+
+    self:CreateSelfButtons()
 
     -- Create group buttons
     self.groupButtons = {}
@@ -1156,6 +1172,14 @@ function BuffPower:UpdateLayout()
     local groupButtonWidth = self.opt.groupButtonWidth
     local playerButtonWidth = self.opt.playerButtonWidth
 
+    local numMembers = GetNumGroupMembers()
+    local hideCompletely = (numMembers == 0 and not self.opt.ShowWhenSolo)
+        or (numMembers > 0 and not IsInRaid() and not self.opt.ShowInParty)
+
+    -- Self-buff rows stack upwards above the Header, so the groups and the drag handle
+    -- stay where they are whether or not self buffs are shown
+    local selfRows = self:LayoutSelfButtons(not hideCompletely, groupButtonWidth, buttonHeight)
+
     for groupNum = 1, BUFFPOWER_CONSTANTS.MAX_RAID_GROUPS do
         local button = self.groupButtons[groupNum]
         if button then
@@ -1212,7 +1236,7 @@ function BuffPower:UpdateLayout()
     end
 
     -- Resize main frame and show/hide Frame
-    if visibleGroups > 0 then
+    if selfRows + visibleGroups > 0 then
         self.Header:SetSize(groupButtonWidth + 10, visibleGroups * (buttonHeight + 2) + 10)
         self.Header:Show()
         self.Frame:Show()
@@ -1220,16 +1244,7 @@ function BuffPower:UpdateLayout()
     else
         self.Header:Hide()
 
-        local numMembers = GetNumGroupMembers()
-        local shouldHideCompletely = false
-
-        if numMembers == 0 and not self.opt.ShowWhenSolo then
-            shouldHideCompletely = true
-        elseif numMembers > 0 and not IsInRaid() and not self.opt.ShowInParty then
-            shouldHideCompletely = true
-        end
-
-        if shouldHideCompletely then
+        if hideCompletely then
             self.Frame:Hide()
         else
             -- Keep Frame shown so anchor can be seen when active but empty
@@ -1688,6 +1703,183 @@ function BuffPower:PlayerBuffIcon_OnEnter(icon)
             GameTooltip:Show()
         end
     end
+end
+
+-------------------------------------------------------------------
+-- Self Buffs
+-------------------------------------------------------------------
+-- Rows at the top of the grid for buffs you cast on yourself (BuffPower_SelfBuffs).
+-- Each row is one slot: scroll to pick the choice or turn it off, click to cast.
+
+-- Marks which choices you know: choice.cast is the spell a click casts, nil when none is known.
+function BuffPower:ScanSelfBuffs()
+    for _, slot in ipairs(BuffPower_SelfBuffs[self.playerClass]) do
+        for _, choice in ipairs(slot.choices) do
+            choice.cast = nil
+            for _, spell in ipairs(choice.spells) do
+                local id = FirstKnownRank(spell)
+                local name, _, icon = GetSpellInfo(id or spell.rankIDs[1])
+                spell.name = name or spell.name
+                spell.icon = icon
+                if id and not choice.cast then choice.cast = spell end
+            end
+        end
+    end
+    self:UpdateSelfBuffStatus()
+end
+
+-- The slot's active choice (nil when turned off) and its first known choice (nil when
+-- none is known). A saved choice you don't know (yet) falls back to the first known one.
+function BuffPower:GetSelfChoice(slot)
+    local saved = self.charOpt.selfBuffs[slot.key]
+    local first
+    for _, choice in ipairs(slot.choices) do
+        if choice.cast then
+            if choice.key == saved then return choice, first or choice end
+            first = first or choice
+        end
+    end
+    if saved == "off" then return nil, first end
+    return first, first
+end
+
+-- Like CheckPlayerBuffs: while auras are secret, the last status read is kept until it expires.
+function BuffPower:UpdateSelfBuffStatus()
+    local secret = AurasAreSecret()
+    for _, slot in ipairs(BuffPower_SelfBuffs[self.playerClass]) do
+        local choice = self:GetSelfChoice(slot)
+        local status = { hasBuff = false, expires = math.huge }
+        if choice and secret then
+            local last = self.selfStatus[slot.key]
+            if last and last.hasBuff and last.expires > GetTime() then status = last end
+        elseif choice then
+            for _, spell in ipairs(choice.spells) do
+                local hasBuff, expires = FindBuff("player", spell)
+                if hasBuff then
+                    status = { hasBuff = true, expires = expires }
+                    break
+                end
+            end
+        end
+        self.selfStatus[slot.key] = status
+    end
+end
+
+function BuffPower:CreateSelfButtons()
+    self.selfButtons = {}
+    for _, slot in ipairs(BuffPower_SelfBuffs[self.playerClass]) do
+        local button = CreateFrame("Button", "BuffPowerSelfButton_" .. slot.key, self.Header, "SecureActionButtonTemplate, BackdropTemplate")
+        button.slot = slot
+        StyleButton(button)
+
+        -- Only a picture: clicks and the scroll wheel go through to the row, which does the casting
+        button.icon = CreateFrame("Button", nil, button)
+        button.icon:SetSize(ICON_SIZE, ICON_SIZE)
+        -- Right-aligned, like the group buttons' buff icons
+        button.icon:SetPoint("RIGHT", button, "RIGHT", -6, 0)
+        button.icon:EnableMouse(false)
+        CreateIconTexture(button.icon)
+        CreateTimerText(button.icon)
+
+        -- Any mouse button casts on yourself; UpdateSelfButton sets the spell
+        button:SetAttribute("type", "spell")
+        button:SetAttribute("unit", "player")
+        button:RegisterForClicks("AnyUp", "AnyDown")
+        button:EnableMouseWheel(true)
+        button:SetScript("OnMouseWheel", function(self, delta) BuffPower:CycleSelfBuff(self, delta) end)
+        button:SetScript("OnEnter", function(self) BuffPower:SelfButton_OnEnter(self) end)
+        button:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        button:Hide()
+
+        tinsert(self.selfButtons, button)
+    end
+end
+
+-- Shows a row for every slot with a known choice, stacked upwards from the top of the
+-- Header (the first group). Laid out last slot first, so the slots read top to bottom.
+-- Returns the number of rows shown.
+function BuffPower:LayoutSelfButtons(show, width, height)
+    local rows = 0
+    for i = #self.selfButtons, 1, -1 do
+        local button = self.selfButtons[i]
+        local _, first = self:GetSelfChoice(button.slot)
+        if show and self.opt.ShowSelfBuffs and first then
+            button:SetSize(width, height)
+            button:ClearAllPoints()
+            button:SetPoint("BOTTOMLEFT", self.Header, "TOPLEFT", 0, 2 + rows * (height + 2))
+            button:Show()
+            self:UpdateSelfButton(button)
+            rows = rows + 1
+        else
+            button:Hide()
+        end
+    end
+    return rows
+end
+
+function BuffPower:UpdateSelfButton(button)
+    if not InCombatLockdown() then
+        local choice = self:GetSelfChoice(button.slot)
+        button:SetAttribute("spell", choice and choice.cast.name)
+    end
+    self:UpdateSelfButtonDisplay(button)
+end
+
+-- Safe in combat: only text, colours and textures
+function BuffPower:UpdateSelfButtonDisplay(button)
+    local choice, first = self:GetSelfChoice(button.slot)
+    if choice then
+        local status = self.selfStatus[button.slot.key]
+        button.icon.texture:SetTexture(choice.cast.icon)
+        Tint(button.icon, status.hasBuff)
+        button.icon.timer:SetText(status.hasBuff and self:FormatTimeCompact(status.expires - GetTime()) or "")
+        button:SetBackdropColor(unpack(status.hasBuff and COLORS.buffed or COLORS.missing))
+    else
+        -- Turned off: grey, with the first choice's icon greyed out as a hint of what scrolling brings back
+        button.icon.texture:SetTexture(first and first.cast.icon)
+        Tint(button.icon, false)
+        button.icon.timer:SetText("")
+        button:SetBackdropColor(unpack(COLORS.inactive))
+    end
+end
+
+-- Steps through the known choices and "off", in the same direction as the player buttons' scroll.
+function BuffPower:CycleSelfBuff(button, delta)
+    if InCombatLockdown() then return end
+
+    local keys = {}
+    for _, choice in ipairs(button.slot.choices) do
+        if choice.cast then tinsert(keys, choice.key) end
+    end
+    tinsert(keys, "off")
+
+    local choice = self:GetSelfChoice(button.slot)
+    local current = #keys
+    for i, key in ipairs(keys) do
+        if choice and choice.key == key then current = i end
+    end
+    current = (current - 1 + (delta > 0 and 1 or -1)) % #keys + 1
+    self.charOpt.selfBuffs[button.slot.key] = keys[current]
+
+    self:UpdateBuffStatus()
+    self:UpdateUI()
+    if button:IsMouseOver() then
+        self:SelfButton_OnEnter(button)
+    end
+end
+
+function BuffPower:SelfButton_OnEnter(button)
+    if not self.opt.ShowTooltips then return end
+    local choice = self:GetSelfChoice(button.slot)
+    GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
+    if choice then
+        GameTooltip:SetText(choice.cast.name)
+        GameTooltip:AddLine("Click to cast on yourself.", 1, 1, 1, true)
+    else
+        GameTooltip:SetText("Off")
+    end
+    GameTooltip:AddLine("Scroll wheel to change this buff or turn it off.", 1, 1, 1, true)
+    GameTooltip:Show()
 end
 
 -------------------------------------------------------------------

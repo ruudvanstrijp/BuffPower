@@ -21,6 +21,7 @@ globals = {
     "BuffPower_BuffPriority",
     "BuffPower_ClassNames",
     "BuffPower_ClassOrder",
+    "BuffPower_SelfBuffs",
     "BuffPower_Spells",
     "BUFFPOWER_CONSTANTS",
     "BUFFPOWER_DEFAULT_VALUES",

@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.2.0] - 2026-11-11
+
+### Added
+- **Self Buffs** ([#18](https://github.com/ruudvanstrijp/BuffPower/issues/18)): Rows above the groups show the buffs you cast on yourself: Frost Armor, Ice Armor, Mage Armor or Molten Armor for Mages, Inner Fire, Shadowguard and Touch of Weakness for Priests, and Omen of Clarity for Druids. A row turns red when its buff is missing and shows the time left; click it to cast the buff on yourself. Scroll the mouse wheel over a row to pick a different buff, such as another armor, or to turn the row off. Your choices are saved per character, and Show Self Buffs in the options hides the rows altogether.
+
 ## [v1.1.0] - 2026-11-03
 
 The first full release since v1.0.9, for Classic Era, TBC Anniversary and WoW Forever. It includes everything from the v1.1.0 betas.

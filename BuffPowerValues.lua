@@ -169,6 +169,62 @@ BuffPower_Spells = {
 }
 
 -------------------------------------------------------------------
+-- Self Buffs
+--
+-- Buffs you can only cast on yourself. Each slot is one row at the top of the
+-- grid, shown when you know at least one of its choices. Scrolling over the
+-- row cycles through the known choices and "off". A choice lists its spells
+-- best first: the first one known is cast, and any of them counts as buffed,
+-- so Frost Armor still counts once Ice Armor replaces it. ScanSelfBuffs fills
+-- in each spell's localized name and icon.
+-------------------------------------------------------------------
+BuffPower_SelfBuffs = {
+    MAGE = {
+        { key = "armor", choices = {
+            { key = "frost", spells = {
+                { name = "Ice Armor", rankIDs = { 27124, 10220, 10219, 7320, 7302 } }, -- Rank 5 down to 1
+                { name = "Frost Armor", rankIDs = { 7301, 7300, 168 } }, -- Rank 3 down to 1
+            } },
+            { key = "mage", spells = {
+                { name = "Mage Armor", rankIDs = { 27125, 22783, 22782, 6117 } }, -- Rank 4 down to 1
+            } },
+            { key = "molten", spells = {
+                { name = "Molten Armor", rankIDs = { 30482, 428741 } }, -- TBC, then the Season of Discovery bracer rune
+            } },
+        } },
+    },
+
+    PRIEST = {
+        { key = "inner_fire", choices = {
+            { key = "inner_fire", spells = {
+                { name = "Inner Fire", rankIDs = { 25431, 10952, 10951, 1006, 602, 7128, 588 } }, -- Rank 7 down to 1
+            } },
+        } },
+        -- Racial: Troll
+        { key = "shadowguard", choices = {
+            { key = "shadowguard", spells = {
+                { name = "Shadowguard", rankIDs = { 25477, 19312, 19311, 19310, 19309, 19308, 18137 } }, -- Rank 7 down to 1
+            } },
+        } },
+        -- Racial: Undead
+        { key = "touch_of_weakness", choices = {
+            { key = "touch_of_weakness", spells = {
+                { name = "Touch of Weakness", rankIDs = { 25461, 19266, 19265, 19264, 19262, 19261, 2652 } }, -- Rank 7 down to 1
+            } },
+        } },
+    },
+
+    DRUID = {
+        -- Talent
+        { key = "omen", choices = {
+            { key = "omen", spells = {
+                { name = "Omen of Clarity", rankIDs = { 16864 } },
+            } },
+        } },
+    },
+}
+
+-------------------------------------------------------------------
 -- Buff Priority Order: which buff a click casts first, and the icon order (left to right)
 -------------------------------------------------------------------
 BuffPower_BuffPriority = {
@@ -189,6 +245,7 @@ BUFFPOWER_DEFAULT_VALUES = {
         ShowWhenSolo = true,
         ShowInParty = true,
         ShowPets = false,
+        ShowSelfBuffs = true,
         ShowTooltips = true,
         FirstNamesOnly = false, -- WoW Forever: hide players' last names
         debug = false,
@@ -218,5 +275,9 @@ BUFFPOWER_DEFAULT_VALUES = {
 
         -- Player name -> optional buff key forced on that player (scroll-wheel override)
         playerAssignments = {},
+
+        -- Self-buff slot key -> chosen choice key, or "off" (scroll wheel on the self rows).
+        -- Unset means the slot's first known choice.
+        selfBuffs = {},
     },
 }

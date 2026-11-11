@@ -31,15 +31,19 @@ Install BuffPower from [CurseForge](https://www.curseforge.com/wow/addons/buffpo
 - **Your groups**: Pick the groups you are responsible for. This is saved per character, so
   your priest and your mage can cover different groups.
 - **Pets**: Optionally list pets under their owner's group and buff them too.
+- **Self buffs**: Rows above the groups keep track of the buffs you cast on yourself, such
+  as your Mage armor or Inner Fire.
 - **Adjustable size**: Scale the whole frame, and widen the group and player buttons to
   make room for long names.
 
 ## Supported classes
 
-- **Mage**: Arcane Intellect / Arcane Brilliance, Amplify Magic, Dampen Magic
+- **Mage**: Arcane Intellect / Arcane Brilliance, Amplify Magic, Dampen Magic. On
+  yourself: Frost Armor / Ice Armor, Mage Armor or Molten Armor
 - **Priest**: Power Word: Fortitude / Prayer of Fortitude, Divine Spirit / Prayer of
-  Spirit, Shadow Protection / Prayer of Shadow Protection
-- **Druid**: Mark of the Wild / Gift of the Wild, Thorns
+  Spirit, Shadow Protection / Prayer of Shadow Protection. On yourself: Inner Fire,
+  Shadowguard (Troll), Touch of Weakness (Undead)
+- **Druid**: Mark of the Wild / Gift of the Wild, Thorns. On yourself: Omen of Clarity
 
 ## How to use
 
@@ -51,6 +55,9 @@ Install BuffPower from [CurseForge](https://www.curseforge.com/wow/addons/buffpo
 - **Click a buff icon next to a player**: Casts that buff on that player.
 - **Mouse wheel over a player**: Cycles through manual utility assignments (for example,
   forcing Thorns on).
+- **Self-buff rows (above the groups)**: Click to cast the buff on yourself. Scroll the
+  mouse wheel over a row to change its buff (for example, which armor a Mage uses) or to
+  turn it off. Show Self Buffs in the options hides the rows altogether.
 - **The light next to the groups**: Click it to lock (red) or unlock (green) the frame;
   drag it to move the frame while unlocked. Right-click it for the options.
 - **Minimap button**: Click to show or hide the window, right-click for the options.
