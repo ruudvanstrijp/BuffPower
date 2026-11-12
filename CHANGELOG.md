@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.3.0] - 2026-11-12
+
+### Added
+- **Key Bindings**: Two new key bindings, under BuffPower in the game's Key Bindings screen. **Buff Next Player** casts the next missing buff on the first player who needs one in the groups you are responsible for; press it again for the next player. It always casts the single-target buff, so it never uses reagents. **Buff Self** casts the next buff missing on yourself: first your self buffs, such as an armor or Inner Fire, then the buffs you are assigned to receive. Neither does anything in combat, where an addon cannot choose a new target.
+
+### Changed
+- **Code Cleanup**: BuffPower now uses the game's native spell functions on all three clients instead of its own compatibility wrappers.
+
+### Removed
+- **Toggle and Options Key Bindings**: The two unnamed key bindings for showing BuffPower and opening its options are gone. `/bp`, `/bp options` and the minimap icon still do both.
+
+### Fixed
+- **Group Buff Targeting**: A group buff is now cast on a group member who is within range of the buff itself. On WoW Forever, range was not taken into account.
+- **Edit Mode Error on WoW Forever**: Fixed a Lua error that appeared when opening the game's Edit Mode.
+- **Newly Learned Spells**: A buff you have just learned should now show up right away, instead of only after a reload or zone change.
+
 ## [v1.2.0] - 2026-11-11
 
 ### Added

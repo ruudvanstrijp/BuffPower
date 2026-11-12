@@ -25,6 +25,8 @@ globals = {
     "BuffPower_Spells",
     "BUFFPOWER_CONSTANTS",
     "BUFFPOWER_DEFAULT_VALUES",
+    -- Key binding labels read by the game
+    "BINDING_HEADER_BUFFPOWER",
 }
 
 -- Game API the addon uses. Kept as an explicit list rather than a full WoW API dump
@@ -53,14 +55,10 @@ read_globals = {
     "SecureHandlerSetFrameRef",
 
     -- Spells and auras
-    "AuraUtil",
+    "C_UnitAuras",
     "C_Secrets",
-    "issecretvalue", -- Forever only; BuffPower.lua falls back when it is missing
     "C_Spell",
     "C_SpellBook",
-    "GetSpellInfo",
-    "IsSpellInRange",
-    "IsSpellKnown",
 
     -- Group and units
     "Ambiguate",
@@ -71,11 +69,9 @@ read_globals = {
     "IsInRaid",
     "UnitClass",
     "UnitExists",
-    "UnitInRange",
     "UnitIsConnected",
     "UnitIsDeadOrGhost",
     "UnitIsVisible",
-    "UnitName",
 
     -- Timing
     "C_Timer",

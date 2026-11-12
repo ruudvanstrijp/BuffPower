@@ -1,8 +1,5 @@
 <Bindings>
-    <Binding name="BUFFPOWER_TOGGLE" header="BUFFPOWER" category="ADDONS">
-        BuffPower:SlashCommand("")
-    </Binding>
-    <Binding name="BUFFPOWER_OPTIONS" header="" category="ADDONS">
-        BuffPower:OpenConfigWindow()
-    </Binding>
+    <!-- Each clicks a hidden secure button that BuffPower keeps aimed at the next missing buff -->
+    <Binding name="CLICK BuffPowerNextBuffButton:LeftButton" header="BUFFPOWER" category="ADDONS"/>
+    <Binding name="CLICK BuffPowerSelfBuffButton:LeftButton" category="ADDONS"/>
 </Bindings>

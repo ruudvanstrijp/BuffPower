@@ -222,7 +222,7 @@ local function ClassColoredName(classFilename)
     local name = BuffPower_ClassNames[classFilename]
     local color = RAID_CLASS_COLORS[classFilename]
     if not color then return name end
-    return format("|cff%02x%02x%02x%s|r", color.r * 255, color.g * 255, color.b * 255, name)
+    return color:WrapTextInColorCode(name)
 end
 
 function BuffPower:GetClassAssignmentOptions()

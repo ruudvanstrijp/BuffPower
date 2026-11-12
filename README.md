@@ -64,7 +64,9 @@ Install BuffPower from [CurseForge](https://www.curseforge.com/wow/addons/buffpo
 - **`/bp`**: Shows or hides the window. `/bp options` opens the options, and `/bp reset`
   moves the window back to the middle of the screen.
 
-The window and the options can also be bound to keys, under Key Bindings > AddOns.
+Two actions can be bound to keys, under Key Bindings > AddOns. **Buff Next Player** casts
+the next missing single-target buff on the first player who needs one, and **Buff Self**
+casts the next buff missing on yourself. Neither does anything in combat.
 
 ## Compatibility
 

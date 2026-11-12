@@ -68,11 +68,11 @@ Out of combat, hovering a group expands its player list through plain Lua (`Grou
 
 ### Cross-client compatibility
 
-The top of `BuffPower.lua` holds a compatibility layer, and new API usage should go through it rather than branching on interface numbers:
+All three clients provide the `C_Spell`, `C_SpellBook` and `C_UnitAuras` namespaces, so prefer those over the older globals, and keep the few remaining client differences in the compatibility section at the top of `BuffPower.lua` rather than branching on interface numbers:
 
-- `GetSpellInfo` prefers the Classic global and falls back to `C_Spell` (Forever is Mainline-family and lacks the global); the wrapper keeps the Classic return signature. Known spells are checked with `C_SpellBook.IsSpellInSpellBook`, which all three clients have, and the deprecated `IsSpellKnown` is only a fallback: it misses spells from Season of Discovery runes (Molten Armor). Aura detection uses `AuraUtil.FindAuraByName`, which every client provides.
-- `IsSpellInRange` is always normalized to `1`/`0`/`nil`, because callers test `~= 0` and Mainline returns booleans.
-- `UnitInRange` returns `nil` (range unknown) instead of Forever's secret boolean. Blizzard's API docs (`Blizzard_APIDocumentationGenerated` on the `forever` branch of wow-ui-source) mark such functions `SecretReturns = true`; check there before testing a new unit API's result.
+- Spell names and icons come from `C_Spell.GetSpellName` / `C_Spell.GetSpellTexture`; Forever is Mainline-family and lacks the `GetSpellInfo` global. Known spells are checked with `C_SpellBook.IsSpellInSpellBook`; the deprecated `IsSpellKnown` global misses spells from Season of Discovery runes (Molten Armor). Aura detection calls `C_UnitAuras.GetAuraDataBySpellName` directly, not `AuraUtil.FindAuraByName`: opening Edit Mode on Forever points `AuraUtil` at a mock data provider (on `AURA_DATA_PROVIDER_SWITCH`) that lacks that function, and the call errors.
+- Range is checked with `C_Spell.IsSpellInRange`, which returns `true`/`false`/`nil` on every client (the old global returned `1`/`0`/`nil` and is missing on Forever). Callers test `~= false`, so `nil` (range unknown) counts as in range.
+- Don't use `UnitInRange`: on Forever it returns a secret boolean. Blizzard's API docs (`Blizzard_APIDocumentationGenerated` on the `forever` branch of wow-ui-source) mark such functions `SecretReturns = true`; check there before testing a new unit API's result.
 - Secure snippets are set up unconditionally. Forever beta build 69893 could not compile them (forever-bugs#74, fixed in 70009). Don't detect snippet support by checking `loadstring_untainted`: Blizzard's environment cleanup removes that global on every client before addons load (issue #14). Don't probe by executing a snippet either: on a broken client the failure reaches the error handler even inside `pcall`.
 
 ### Forever-specific constraints

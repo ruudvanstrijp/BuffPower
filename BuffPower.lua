@@ -8,6 +8,11 @@
 -------------------------------------------------------------------
 BuffPower = LibStub("AceAddon-3.0"):NewAddon("BuffPower", "AceConsole-3.0", "AceEvent-3.0", "AceBucket-3.0", "AceTimer-3.0")
 
+-- Labels for the key bindings in Bindings.xml, shown in the game's Key Bindings screen
+BINDING_HEADER_BUFFPOWER = "BuffPower"
+_G["BINDING_NAME_CLICK BuffPowerNextBuffButton:LeftButton"] = "BuffPower: Buff Next Player"
+_G["BINDING_NAME_CLICK BuffPowerSelfBuffButton:LeftButton"] = "BuffPower: Buff Self"
+
 local tinsert = table.insert
 local tsort = table.sort
 local format = string.format
@@ -15,46 +20,16 @@ local format = string.format
 -------------------------------------------------------------------
 -- API Compatibility
 --
--- WoW Forever runs on the Mainline API family, where the Classic-era
--- globals below were replaced by the C_Spell / C_SpellBook namespaces. Each wrapper prefers the global where it still exists, so
--- Classic behaviour is unchanged, and keeps the Classic return signature
--- so the rest of the addon does not need to branch on game version.
--------------------------------------------------------------------
-local GetSpellInfo = GetSpellInfo
-if not GetSpellInfo and C_Spell and C_Spell.GetSpellInfo then
-    GetSpellInfo = function(spell)
-        local info = C_Spell.GetSpellInfo(spell)
-        if not info then return nil end
-        return info.name, nil, info.iconID, info.castTime, info.minRange, info.maxRange, info.spellID
-    end
-end
-
--- Whether a spell is in your spellbook. The deprecated IsSpellKnown global is only
--- a fallback: it misses spells from Season of Discovery runes (Molten Armor), which
+-- Classic Era, TBC Anniversary and WoW Forever all provide the C_Spell and
+-- C_SpellBook namespaces, so spells need no per-client wrappers. Forever lacks
+-- the older GetSpellInfo / IsSpellInRange globals, and the IsSpellKnown global
+-- misses spells from Season of Discovery runes (Molten Armor), which
 -- C_SpellBook.IsSpellInSpellBook does find.
-local IsSpellInSpellBook = (C_SpellBook and C_SpellBook.IsSpellInSpellBook) or IsSpellKnown
-
--- Classic returns 1/0/nil, Mainline returns true/false/nil, and the deprecated
--- Mainline global is inconsistent between builds. Callers test `~= 0`, so coerce
--- whatever comes back to the numeric form (nil still means "range unknown").
-local IsSpellInRangeRaw = IsSpellInRange or (C_Spell and C_Spell.IsSpellInRange)
-local function IsSpellInRange(spell, unit)
-    if not IsSpellInRangeRaw then return nil end
-    local inRange = IsSpellInRangeRaw(spell, unit)
-    if inRange == true then return 1 end
-    if inRange == false then return 0 end
-    return inRange
-end
-
--- Forever's UnitInRange always returns a secret boolean, which addon code cannot
--- test. Return nil (range unknown) instead. Classic has no issecretvalue.
-local issecretvalue = issecretvalue or function() return false end
-local UnitInRangeRaw = UnitInRange
-local function UnitInRange(unit)
-    local inRange = UnitInRangeRaw(unit)
-    if issecretvalue(inRange) then return nil end
-    return inRange
-end
+-------------------------------------------------------------------
+-- true / false, or nil when the range is unknown (spell not known, invalid unit).
+-- Callers test `~= false`, so unknown counts as in range. Used instead of
+-- UnitInRange, whose result is a secret value on Forever.
+local IsSpellInRange = C_Spell.IsSpellInRange
 
 -- Forever makes auras secret in combat, and the aura API then refuses addon reads
 -- ("Auras cannot be accessed when secret while tainted"), so every buff would look
@@ -136,7 +111,6 @@ local function CreateTimerText(icon)
 end
 
 -- State variables
-BuffPower.player = UnitName("player")
 BuffPower.playerClass = nil
 BuffPower.availableBuffs = {}
 BuffPower.raidComposition = {}
@@ -200,10 +174,13 @@ function BuffPower:OnEnable()
     self:RegisterBucketEvent({"GROUP_ROSTER_UPDATE", "UNIT_PET"}, 1, "UpdateRoster")
     self:RegisterBucketEvent({"UNIT_AURA"}, 0.5, "OnUnitAura")
     self:RegisterEvent("SPELLS_CHANGED", "ScanPlayerBuffs")
+    -- A spell learned on level-up is not always in the spellbook yet at SPELLS_CHANGED
+    self:RegisterEvent("LEARNED_SPELL_IN_SKILL_LINE", "ScanPlayerBuffs")
     self:RegisterEvent("PLAYER_TALENT_UPDATE", "ScanPlayerBuffs")
     self:RegisterEvent("ZONE_CHANGED", "UpdateRoster")
     self:RegisterEvent("ZONE_CHANGED_NEW_AREA", "UpdateRoster")
     self:RegisterEvent("PLAYER_REGEN_ENABLED", "OnCombatEnded")
+    self:RegisterEvent("PLAYER_REGEN_DISABLED", "OnCombatStarted")
 
     -- Schedule repeating timer for UI updates (every 0.2 seconds for smooth range updates)
     self.updateTimer = self:ScheduleRepeatingTimer("OnTimerTick", 0.2)
@@ -352,6 +329,10 @@ function BuffPower:UpdateUI(displayOnly)
             end
         end
     end
+
+    if not displayOnly then
+        self:UpdateKeyBindingButtons()
+    end
 end
 
 -------------------------------------------------------------------
@@ -412,7 +393,7 @@ end
 -- Highest known rank of a spell variant (rankIDs run high to low), or nil when none is learned.
 local function FirstKnownRank(variant)
     for _, id in ipairs(variant.rankIDs or { variant.spellID }) do
-        if IsSpellInSpellBook(id) then return id end
+        if C_SpellBook.IsSpellInSpellBook(id) then return id end
     end
 end
 
@@ -426,7 +407,7 @@ function BuffPower:ScanPlayerBuffs()
             variant.isKnown = id ~= nil
             variant.spellID = id or variant.spellID
             -- Always the localized name: it is what gets cast and what auras are matched against.
-            variant.name = GetSpellInfo(variant.spellID) or variant.name
+            variant.name = C_Spell.GetSpellName(variant.spellID) or variant.name
         end
 
         self.availableBuffs[buffKey] = buffData.single.isKnown
@@ -682,8 +663,11 @@ end
 -- Returns the expiration time, math.huge for a buff that does not expire.
 local function FindBuff(unitid, variant)
     if not variant then return end
-    local name, _, _, _, _, expirationTime = AuraUtil.FindAuraByName(variant.name, unitid, "HELPFUL")
-    if not name then return end
+    -- Not AuraUtil.FindAuraByName: opening Edit Mode on Forever points AuraUtil at a mock
+    -- data provider that lacks this function, so the call would error.
+    local aura = C_UnitAuras.GetAuraDataBySpellName(unitid, variant.name, "HELPFUL")
+    if not aura then return end
+    local expirationTime = aura.expirationTime
     return true, (expirationTime and expirationTime > 0) and expirationTime or math.huge
 end
 
@@ -740,8 +724,8 @@ function BuffPower:GetSmartBuffsForGroup(groupNum, targetUnit)
                     if mStatus then
                         local bStatus = mStatus.buffStatus[buffKey]
                         if bStatus then
-                            -- Check range: nil means "unknown" (not on action bar), 1 means "in range", 0 means "out of range"
-                            local inRange = not buffData.single or (IsSpellInRange(buffData.single.name, playerInfo.unitid) ~= 0)
+                            -- Check range: nil means "unknown", true "in range", false "out of range"
+                            local inRange = not buffData.single or (IsSpellInRange(buffData.single.name, playerInfo.unitid) ~= false)
                             if inRange then
                                 if not bStatus.hasBuff then
                                     if not singleSpell then
@@ -805,6 +789,100 @@ function BuffPower:GetSmartBuffsForGroup(groupNum, targetUnit)
 end
 
 -------------------------------------------------------------------
+-- Key bindings: "Buff Next Player" and "Buff Self"
+-------------------------------------------------------------------
+-- Each binding in Bindings.xml clicks a hidden secure button. A key press can only cast
+-- what that button's attributes say, and those can only change out of combat, so the
+-- next missing buff is picked ahead of time, on every full UI update. Combat clears
+-- the buttons: their targets could not be updated there, so a key would keep rebuffing
+-- the same player.
+
+-- Whether the spell can be cast on this member right now, as far as the addon can tell
+function BuffPower:CanReach(playerInfo, spellName)
+    if not playerInfo.isOnline or playerInfo.isDead then return false end
+    if playerInfo.unitid == "player" then return true end
+    return UnitIsVisible(playerInfo.unitid) and IsSpellInRange(spellName, playerInfo.unitid) ~= false
+end
+
+-- The first missing buff in the groups you are responsible for, in group, priority and
+-- member order. Always the single-target spell, so no reagents are spent; group buffs
+-- stay a deliberate click in the grid. Returns nil when nobody within reach needs a buff.
+function BuffPower:GetNextBuff()
+    local classSpells = BuffPower_Spells[self.playerClass]
+    local priority = BuffPower_BuffPriority[self.playerClass] or {}
+
+    for groupNum = 1, BUFFPOWER_CONSTANTS.MAX_RAID_GROUPS do
+        local groupStatus = self.groupBuffStatus[groupNum]
+        if groupStatus and self.charOpt.myResponsibleGroups["Group " .. groupNum] ~= false then
+            for _, buffKey in ipairs(priority) do
+                local buffData = classSpells[buffKey]
+                if buffData and self.availableBuffs[buffKey] then
+                    for _, playerInfo in ipairs(self.raidComposition[groupNum]) do
+                        local memberStatus = groupStatus.memberStatus[playerInfo.unitid]
+                        local buffStatus = memberStatus and memberStatus.buffStatus[buffKey]
+                        if buffStatus and not buffStatus.hasBuff and self:CanReach(playerInfo, buffData.single.name) then
+                            return buffData.single.name, playerInfo.unitid
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- The first buff missing on yourself: the self-buff rows first (armor, Inner Fire, ...),
+-- then the buffs your class assignments or a scroll-wheel override give you. Read
+-- straight from your own auras, so it also works when the grid is hidden. Returns nil
+-- when you have everything.
+function BuffPower:GetNextSelfBuff()
+    if self.opt.ShowSelfBuffs then
+        for _, slot in ipairs(BuffPower_SelfBuffs[self.playerClass]) do
+            local choice = self:GetSelfChoice(slot)
+            local status = self.selfStatus[slot.key]
+            if choice and status and not status.hasBuff then
+                return choice.cast.name
+            end
+        end
+    end
+
+    local classSpells = BuffPower_Spells[self.playerClass]
+    local playerName = GetUnitName("player", true)
+    for _, buffKey in ipairs(BuffPower_BuffPriority[self.playerClass] or {}) do
+        local buffData = classSpells[buffKey]
+        if buffData and self.availableBuffs[buffKey]
+            and self:ShouldBuffUnit(buffKey, playerName, self.playerClass)
+            and not self:UnitHasBuff("player", buffData) then
+            return buffData.single.name
+        end
+    end
+end
+
+local function SetCast(button, spell, unit)
+    button:SetAttribute("type", spell and "spell" or nil)
+    button:SetAttribute("spell", spell)
+    button:SetAttribute("unit", unit)
+end
+
+function BuffPower:UpdateKeyBindingButtons(clear)
+    if not self.nextBuffButton then return end
+
+    -- Also clear while auras can't be read (Forever, in combat): the status would be stale
+    if clear or AurasAreSecret() then
+        SetCast(self.nextBuffButton)
+        SetCast(self.selfBuffButton)
+        return
+    end
+
+    SetCast(self.nextBuffButton, self:GetNextBuff())
+    SetCast(self.selfBuffButton, self:GetNextSelfBuff(), "player")
+end
+
+-- PLAYER_REGEN_DISABLED fires just before combat lockdown starts, so attributes can still change
+function BuffPower:OnCombatStarted()
+    self:UpdateKeyBindingButtons(true)
+end
+
+-------------------------------------------------------------------
 -- UI Creation
 -------------------------------------------------------------------
 function BuffPower:CreateLayout()
@@ -823,6 +901,12 @@ function BuffPower:CreateLayout()
     self:RestoreFramePosition()
 
     self:CreateSelfButtons()
+
+    -- Hidden buttons that the two key bindings click; see UpdateKeyBindingButtons
+    self.nextBuffButton = CreateFrame("Button", "BuffPowerNextBuffButton", UIParent, "SecureActionButtonTemplate")
+    self.nextBuffButton:RegisterForClicks("AnyUp", "AnyDown")
+    self.selfBuffButton = CreateFrame("Button", "BuffPowerSelfBuffButton", UIParent, "SecureActionButtonTemplate")
+    self.selfBuffButton:RegisterForClicks("AnyUp", "AnyDown")
 
     -- Create group buttons
     self.groupButtons = {}
@@ -1291,7 +1375,7 @@ function BuffPower:UpdateGroupButton(button, groupNum)
         -- Try to find someone valid and in range (generic check) to avoid casting on self if target is OOR
         for _, playerInfo in ipairs(members) do
              local isPlayer = (playerInfo.unitid == "player")
-             if playerInfo.isOnline and not playerInfo.isDead and (isPlayer or (UnitIsVisible(playerInfo.unitid) and UnitInRange(playerInfo.unitid) ~= false)) then
+             if playerInfo.isOnline and not playerInfo.isDead and (isPlayer or (UnitIsVisible(playerInfo.unitid) and (not self.rangeSpell or IsSpellInRange(self.rangeSpell, playerInfo.unitid) ~= false))) then
                 targetUnit = playerInfo.unitid
                 break
              end
@@ -1352,7 +1436,7 @@ function BuffPower:UpdateGroupButton(button, groupNum)
                     local mStatus = groupStatus.memberStatus[playerInfo.unitid]
                     local bStatus = mStatus and mStatus.buffStatus[buffKey]
                     if bStatus and self:ShouldBuffUnit(buffKey, playerInfo.name, playerInfo.classFilename)
-                        and IsSpellInRange(buffData.single.name, playerInfo.unitid) ~= 0 then
+                        and IsSpellInRange(buffData.single.name, playerInfo.unitid) ~= false then
                         if not bStatus.hasBuff then
                             missingUnit = playerInfo.unitid
                             break -- Prioritize completely missing buffs
@@ -1454,7 +1538,7 @@ function BuffPower:UpdatePlayerButtonDisplay(playerButton, playerInfo, groupNum)
     if playerInfo.unitid then
         if self.rangeSpell then
             -- nil means unknown (e.g. spell not on action bar), so we treat it as in range
-            inRange = (IsSpellInRange(self.rangeSpell, playerInfo.unitid) ~= 0)
+            inRange = (IsSpellInRange(self.rangeSpell, playerInfo.unitid) ~= false)
         end
         -- Also check visibility (if not visible, definitely out of range)
         local isPlayer = (playerInfo.unitid == "player")
@@ -1718,9 +1802,9 @@ function BuffPower:ScanSelfBuffs()
             choice.cast = nil
             for _, spell in ipairs(choice.spells) do
                 local id = FirstKnownRank(spell)
-                local name, _, icon = GetSpellInfo(id or spell.rankIDs[1])
-                spell.name = name or spell.name
-                spell.icon = icon
+                local spellID = id or spell.rankIDs[1]
+                spell.name = C_Spell.GetSpellName(spellID) or spell.name
+                spell.icon = C_Spell.GetSpellTexture(spellID)
                 if id and not choice.cast then choice.cast = spell end
             end
         end
